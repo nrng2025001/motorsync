@@ -1,0 +1,53 @@
+module.exports = {
+  root: true,
+  extends: [
+    '@react-native',
+    '@typescript-eslint/recommended',
+    'prettier',
+  ],
+  parser: '@typescript-eslint/parser',
+  plugins: ['@typescript-eslint', 'prettier'],
+  parserOptions: {
+    ecmaFeatures: {
+      jsx: true,
+    },
+    ecmaVersion: 2018,
+    sourceType: 'module',
+  },
+  env: {
+    node: true,
+    es6: true,
+    'react-native/react-native': true,
+  },
+  globals: {
+    console: 'readonly',
+    process: 'readonly',
+    setTimeout: 'readonly',
+    clearTimeout: 'readonly',
+    setInterval: 'readonly',
+    clearInterval: 'readonly',
+    require: 'readonly',
+    module: 'readonly',
+    exports: 'readonly',
+    __dirname: 'readonly',
+    __filename: 'readonly',
+    global: 'readonly',
+    Buffer: 'readonly',
+    URL: 'readonly',
+    FormData: 'readonly',
+    Blob: 'readonly',
+    File: 'readonly',
+    NodeJS: 'readonly',
+    __DEV__: 'readonly',
+  },
+  rules: {
+    'prettier/prettier': 'error',
+    '@typescript-eslint/no-unused-vars': 'error',
+    '@typescript-eslint/explicit-function-return-type': 'off',
+    '@typescript-eslint/explicit-module-boundary-types': 'off',
+    '@typescript-eslint/no-explicit-any': 'warn',
+    'no-console': ['warn', { allow: ['warn', 'error'] }],
+    'no-undef': 'off', // TypeScript handles this
+  },
+  ignorePatterns: ['node_modules/', 'android/', 'ios/', '.expo/', 'dist/', 'web-build/'],
+};
