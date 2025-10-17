@@ -19,6 +19,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient as ExpoLinearGradient } from 'expo-linear-gradient';
 import Svg, { Path, Rect, Defs, LinearGradient, Stop, G, Ellipse } from 'react-native-svg';
+import DebugRoleButton from '../../components/DebugRoleButton';
 
 const { width, height } = Dimensions.get('window');
 
@@ -51,7 +52,8 @@ import { useAuth, type UserRole, getRoleDisplayName } from '../../context/AuthCo
 import { useTeam, canManageTeam } from '../../context/TeamContext';
 import { DashboardCard } from '../../components/DashboardCard';
 import { theme, spacing, shadows, borderRadius } from '../../utils/theme';
-import { EnquiriesAPI, QuotationsAPI, BookingsAPI, StockAPI } from '../../api';
+import { enquiryAPI, bookingAPI, QuotationsAPI, StockAPI } from '../../api';
+import { getMyBookings } from '../../services/booking.service';
 
 /**
  * Dashboard data interface
@@ -72,7 +74,9 @@ interface DashboardData {
     total: number;
     today: number;
     thisWeek: number;
-    confirmed: number;
+    pending: number;
+    retailed: number;
+    cancelled: number;
   };
   quotations: {
     total: number;
@@ -110,7 +114,7 @@ interface DashboardState {
 const getEmptyDashboardData = (): DashboardData => ({
   enquiries: { total: 0, hot: 0, booked: 0, lost: 0 },
   followUps: { today: 0, thisWeek: 0, overdue: 0 },
-  bookings: { total: 0, today: 0, thisWeek: 0, confirmed: 0 },
+  bookings: { total: 0, today: 0, thisWeek: 0, pending: 0, retailed: 0, cancelled: 0 },
   quotations: { total: 0, generated: 0, pending: 0, approved: 0 },
   sales: { 
     monthlyTotal: '₹0', 
@@ -142,13 +146,13 @@ export function DashboardScreen({ navigation }: any): React.JSX.Element {
   });
   const [refreshing, setRefreshing] = useState(false);
 
-  const userRole = state.user?.role || 'CUSTOMER_ADVISOR';
+  const userRole = state.user?.role?.name || 'CUSTOMER_ADVISOR';
   const userName = state.user?.name || 'User';
   const canManageTeams = canManageTeam(userRole);
   
   // Get team data for managers
-  const teamHierarchy = state.user ? getTeamHierarchy(state.user.id) : null;
-  const directReports = state.user ? getDirectReports(state.user.id) : [];
+  const teamHierarchy = state.user ? getTeamHierarchy(state.user.firebaseUid) : null;
+  const directReports = state.user ? getDirectReports(state.user.firebaseUid) : [];
 
   /**
    * Handle refresh
@@ -166,44 +170,70 @@ export function DashboardScreen({ navigation }: any): React.JSX.Element {
     try {
       setDashboardState(prev => ({ ...prev, loading: true, error: null }));
       
-      console.log('🔄 Fetching dashboard data...');
+      // Initialize safe defaults
+      let enquiries: any[] = [];
+      let bookings: any[] = [];
       
-      // Fetch advisor-specific data (all advisors can only see their own data)
-      const [enquiries, bookings] = await Promise.all([
-        EnquiriesAPI.getEnquiries({ page: 1, limit: 1000 }), // Get all advisor's enquiries
-        BookingsAPI.getMyBookings(), // Get advisor's assigned bookings
+      // Fetch advisor-specific data using services
+      const [enquiriesResponse, bookingsData] = await Promise.all([
+        enquiryAPI.getEnquiries({ page: 1, limit: 1000 }), // Get all enquiries (will be filtered by user)
+        getMyBookings(undefined, undefined, userRole), // Get advisor's assigned bookings
       ]);
       
-      console.log('📊 Dashboard data fetched:', { enquiries: enquiries.length, bookings: bookings.length });
+      // Extract data from responses - handle nested data structure
+      const allEnquiries = (enquiriesResponse?.data as any)?.enquiries || (enquiriesResponse?.data as any)?.data?.enquiries || [];
+      bookings = bookingsData.bookings || [];
+      
+      
+      
+      // Filter enquiries by current user
+      const currentUserId = state.user?.firebaseUid;
+      enquiries = allEnquiries.filter((enquiry: any) => 
+        enquiry.createdByUserId === currentUserId || 
+        enquiry.createdBy?.firebaseUid === currentUserId ||
+        enquiry.assignedToUserId === currentUserId
+      );
+      
+      // Ensure we have valid arrays
+      if (!Array.isArray(enquiries)) {
+        enquiries = [];
+      }
+      if (!Array.isArray(bookings)) {
+        bookings = [];
+      }
       
       // Process enquiries data
       const enquiriesByCategory = {
-        total: enquiries.length,
-        hot: enquiries.filter((e: any) => e.category === 'HOT').length,
-        booked: enquiries.filter((e: any) => e.category === 'BOOKED').length,
-        lost: enquiries.filter((e: any) => e.category === 'LOST').length,
+        total: Array.isArray(enquiries) ? enquiries.length : 0,
+        hot: Array.isArray(enquiries) ? enquiries.filter((e: any) => e.category === 'HOT').length : 0,
+        booked: Array.isArray(enquiries) ? enquiries.filter((e: any) => e.category === 'BOOKED').length : 0,
+        lost: Array.isArray(enquiries) ? enquiries.filter((e: any) => e.category === 'LOST').length : 0,
       };
-      
-      console.log('📈 Enquiries by category:', enquiriesByCategory);
 
       // Process bookings data
       const bookingsByStatus = {
-        total: bookings.length,
-        today: bookings.filter((b: any) => {
+        total: Array.isArray(bookings) ? bookings.length : 0,
+        pending: Array.isArray(bookings) ? bookings.filter((b: any) => 
+          ['PENDING', 'ASSIGNED', 'IN_PROGRESS', 'CONFIRMED', 'APPROVED'].includes(b.status)
+        ).length : 0,
+        retailed: Array.isArray(bookings) ? bookings.filter((b: any) => b.status === 'DELIVERED').length : 0,
+        cancelled: Array.isArray(bookings) ? bookings.filter((b: any) => 
+          ['CANCELLED', 'REJECTED', 'NO_SHOW'].includes(b.status)
+        ).length : 0,
+        today: Array.isArray(bookings) ? bookings.filter((b: any) => {
           const today = new Date().toISOString().split('T')[0];
           return b.expectedDeliveryDate && b.expectedDeliveryDate.split('T')[0] === today;
-        }).length,
-        thisWeek: bookings.filter((b: any) => {
+        }).length : 0,
+        thisWeek: Array.isArray(bookings) ? bookings.filter((b: any) => {
           const bookingDate = new Date(b.bookingDate);
           const weekAgo = new Date();
           weekAgo.setDate(weekAgo.getDate() - 7);
           return bookingDate >= weekAgo;
-        }).length,
-        confirmed: bookings.filter((b: any) => b.status === 'CONFIRMED').length,
+        }).length : 0,
       };
 
       // Calculate sales data from quotations (if any)
-      const quotations = enquiries.flatMap((e: any) => e.quotations || []);
+      const quotations = Array.isArray(enquiries) ? enquiries.flatMap((e: any) => e.quotations || []) : [];
       const totalQuotationValue = quotations.reduce((sum: number, q: any) => sum + (q.amount || 0), 0);
 
       // Process the data into dashboard format
@@ -236,9 +266,6 @@ export function DashboardScreen({ navigation }: any): React.JSX.Element {
         },
       };
 
-      // Debug logging for processed data
-      console.log('📈 Processed Dashboard Data (Advisor-specific):', dashboardData);
-      console.log('🎯 Final enquiries counts:', dashboardData.enquiries);
 
       setDashboardState({
         loading: false,
@@ -345,246 +372,250 @@ export function DashboardScreen({ navigation }: any): React.JSX.Element {
           }
           showsVerticalScrollIndicator={false}
         >
-        {/* Enquiries Section */}
+        {/* User Info Card */}
+        <View style={styles.userInfoCard}>
+          <View style={styles.userInfoContent}>
+            <View style={styles.userInfoLeft}>
+              <Text style={styles.userName}>
+                {state.user?.name || 'Aditya jaif'}
+              </Text>
+              <Text style={styles.userCode}>
+                Code: {state.user?.dealership?.code || 'TATA001'}
+              </Text>
+              <Text style={styles.userLocation}>
+                {state.user?.dealership?.city || 'jaipur'}, {state.user?.dealership?.state || 'Rajasthan'}
+              </Text>
+              <Text style={styles.userBrands}>
+                Brands: {state.user?.dealership?.brands?.join(', ') || 'TATA'}
+              </Text>
+            </View>
+            <View style={styles.userInfoRight}>
+              <View style={styles.universalButton}>
+                <Text style={styles.universalButtonText}>
+                  UNIVERSAL
+                </Text>
+              </View>
+            </View>
+          </View>
+        </View>
+
+        {/* Enquiries Overview Section */}
         <View style={styles.section}>
-          <Text variant="titleLarge" style={styles.sectionTitle}>
+          <Text style={styles.sectionTitle}>
             Enquiries Overview
           </Text>
-          <Text variant="bodyMedium" style={styles.sectionSubtitle}>
-            Track and manage customer enquiries by category
+          <Text style={styles.sectionSubtitle}>
+            Track and manage customer enquiries
           </Text>
           
-          <View style={styles.categoryGrid}>
-            {/* Hot Enquiries Card */}
-            <TouchableOpacity
-              style={[styles.categoryCard, { backgroundColor: '#FFF7ED', borderLeftColor: '#FF6F00' }]}
-              onPress={() => navigation.navigate('Enquiries', { initialCategory: 'HOT', filterBy: 'category' })}
-              activeOpacity={0.7}
-            >
-              <View style={styles.categoryCardHeader}>
-                <Icon source="fire" size={24} color="#FF6F00" />
-                <Text variant="headlineSmall" style={[styles.categoryValue, { color: '#FF6F00' }]}>
-                  {dashboardData.enquiries.hot}
-                </Text>
+          {/* Hot Enquiries Card */}
+          <View style={styles.hotEnquiriesCard}>
+            <View style={styles.hotEnquiriesContent}>
+              <View style={styles.hotEnquiriesLeft}>
+                <View style={styles.hotEnquiriesIconContainer}>
+                  <Icon source="fire" size={24} color="#FF6F00" />
+                </View>
+                <View style={styles.hotEnquiriesText}>
+                  <Text style={styles.hotEnquiriesLabel}>
+                    Hot Enquiries
+                  </Text>
+                  <Text style={styles.hotEnquiriesCount}>
+                    {dashboardData.enquiries.hot}
+                  </Text>
+                </View>
               </View>
-              <Text variant="titleMedium" style={styles.categoryTitle}>
-                Hot Enquiries
-              </Text>
-              <Text variant="bodySmall" style={styles.categorySubtitle}>
-                High priority leads
-              </Text>
-            </TouchableOpacity>
-
-            {/* Booked Enquiries Card */}
-            <TouchableOpacity
-              style={[styles.categoryCard, { backgroundColor: '#F0F9FF', borderLeftColor: '#3B82F6' }]}
-              onPress={() => navigation.navigate('Enquiries', { initialCategory: 'BOOKED', filterBy: 'category' })}
-              activeOpacity={0.7}
-            >
-              <View style={styles.categoryCardHeader}>
-                <Icon source="check-circle" size={24} color="#3B82F6" />
-                <Text variant="headlineSmall" style={[styles.categoryValue, { color: '#3B82F6' }]}>
-                  {dashboardData.enquiries.booked}
+              <TouchableOpacity 
+                style={styles.viewAllButton}
+                onPress={() => navigation.navigate('Enquiries', { initialCategory: 'HOT', filterBy: 'category' })}
+              >
+                <Text style={styles.viewAllButtonText}>
+                  View All {'>'}
                 </Text>
-              </View>
-              <Text variant="titleMedium" style={styles.categoryTitle}>
-                Booked Enquiries
-              </Text>
-              <Text variant="bodySmall" style={styles.categorySubtitle}>
-                Successfully converted
-              </Text>
-            </TouchableOpacity>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
 
-            {/* Lost Enquiries Card */}
-            <TouchableOpacity
-              style={[styles.categoryCard, { backgroundColor: '#FEF2F2', borderLeftColor: '#EF4444' }]}
-              onPress={() => navigation.navigate('Enquiries', { initialCategory: 'LOST', filterBy: 'category' })}
-              activeOpacity={0.7}
-            >
-              <View style={styles.categoryCardHeader}>
-                <Icon source="close-circle" size={24} color="#EF4444" />
-                <Text variant="headlineSmall" style={[styles.categoryValue, { color: '#EF4444' }]}>
-                  {dashboardData.enquiries.lost}
-                </Text>
-              </View>
-              <Text variant="titleMedium" style={styles.categoryTitle}>
-                Lost Enquiries
-              </Text>
-              <Text variant="bodySmall" style={styles.categorySubtitle}>
-                Opportunity lost
-              </Text>
-            </TouchableOpacity>
-
-            {/* Total Enquiries Card */}
-            <TouchableOpacity
-              style={[styles.categoryCard, { backgroundColor: '#F0FDF4', borderLeftColor: '#10B981' }]}
-              onPress={() => navigation.navigate('Enquiries', { initialCategory: 'ALL', filterBy: 'category' })}
-              activeOpacity={0.7}
-            >
-              <View style={styles.categoryCardHeader}>
+        {/* Enquiries Summary Section */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>
+            Enquiries Summary
+          </Text>
+          
+          <View style={styles.summaryGrid}>
+            {/* Total Enquiries */}
+            <View style={styles.summaryCard}>
+              <View style={[styles.summaryIconContainer, { backgroundColor: '#E8F5E8' }]}>
                 <Icon source="chart-line" size={24} color="#10B981" />
-                <Text variant="headlineSmall" style={[styles.categoryValue, { color: '#10B981' }]}>
-                  {dashboardData.enquiries.total}
-                </Text>
               </View>
-              <Text variant="titleMedium" style={styles.categoryTitle}>
+              <Text style={[styles.summaryCount, { color: '#10B981' }]}>
+                {dashboardData.enquiries.total}
+              </Text>
+              <Text style={styles.summaryLabel}>
                 Total Enquiries
               </Text>
-              <Text variant="bodySmall" style={styles.categorySubtitle}>
-                All enquiries
+            </View>
+
+            {/* Pending Update */}
+            <View style={styles.summaryCard}>
+              <View style={[styles.summaryIconContainer, { backgroundColor: '#FFF3CD' }]}>
+                <Icon source="clock" size={24} color="#F59E0B" />
+              </View>
+              <Text style={[styles.summaryCount, { color: '#F59E0B' }]}>
+                0
               </Text>
-            </TouchableOpacity>
+              <Text style={styles.summaryLabel}>
+                Pending Update
+              </Text>
+            </View>
+
+            {/* Lost Enquiries */}
+            <View style={styles.summaryCard}>
+              <View style={[styles.summaryIconContainer, { backgroundColor: '#FEE2E2' }]}>
+                <Icon source="close-circle" size={24} color="#EF4444" />
+              </View>
+              <Text style={[styles.summaryCount, { color: '#EF4444' }]}>
+                {dashboardData.enquiries.lost}
+              </Text>
+              <Text style={styles.summaryLabel}>
+                Lost Enquiries
+              </Text>
+            </View>
+
+            {/* Converted */}
+            <View style={styles.summaryCard}>
+              <View style={[styles.summaryIconContainer, { backgroundColor: '#E0F2FE' }]}>
+                <Icon source="check-circle" size={24} color="#3B82F6" />
+              </View>
+              <Text style={[styles.summaryCount, { color: '#3B82F6' }]}>
+                {dashboardData.enquiries.booked}
+              </Text>
+              <Text style={styles.summaryLabel}>
+                Converted
+              </Text>
+            </View>
           </View>
         </View>
 
         {/* Bookings Section */}
         <View style={styles.section}>
-          <Text variant="titleLarge" style={styles.sectionTitle}>
-            Bookings Overview
-          </Text>
-          <Text variant="bodyMedium" style={styles.sectionSubtitle}>
-            Monitor booking status and confirmations
-          </Text>
-          
-          <View style={styles.categoryGrid}>
-            {/* Pending Bookings Card */}
-            <TouchableOpacity
-              style={[styles.categoryCard, { backgroundColor: '#FEF3C7', borderLeftColor: '#F59E0B' }]}
-              onPress={() => navigation.navigate('Bookings', { initialStatus: 'PENDING', filterBy: 'status' })}
-              activeOpacity={0.7}
-            >
-              <View style={styles.categoryCardHeader}>
-                <Icon source="clock" size={24} color="#F59E0B" />
-                <Text variant="headlineSmall" style={[styles.categoryValue, { color: '#F59E0B' }]}>
-                  {dashboardData.bookings.today}
-                </Text>
+          <View style={styles.bookingsHeader}>
+            <View style={styles.bookingsHeaderLeft}>
+              <View style={styles.bookingsIconContainer}>
+                <Icon source="bookmark-multiple" size={24} color="#3B82F6" />
               </View>
-              <Text variant="titleMedium" style={styles.categoryTitle}>
-                Pending Bookings
-              </Text>
-              <Text variant="bodySmall" style={styles.categorySubtitle}>
-                Awaiting confirmation
-              </Text>
-            </TouchableOpacity>
-
-            {/* Assigned Bookings Card */}
-            <TouchableOpacity
-              style={[styles.categoryCard, { backgroundColor: '#E0E7FF', borderLeftColor: '#6366F1' }]}
-              onPress={() => navigation.navigate('Bookings', { initialStatus: 'ASSIGNED', filterBy: 'status' })}
-              activeOpacity={0.7}
-            >
-              <View style={styles.categoryCardHeader}>
-                <Icon source="account-check" size={24} color="#6366F1" />
-                <Text variant="headlineSmall" style={[styles.categoryValue, { color: '#6366F1' }]}>
-                  {dashboardData.bookings.thisWeek}
+              <View style={styles.bookingsHeaderText}>
+                <Text style={styles.bookingsHeaderTitle}>
+                  Total Bookings
                 </Text>
-              </View>
-              <Text variant="titleMedium" style={styles.categoryTitle}>
-                Assigned Bookings
-              </Text>
-              <Text variant="bodySmall" style={styles.categorySubtitle}>
-                In progress
-              </Text>
-            </TouchableOpacity>
-
-            {/* Confirmed Bookings Card */}
-            <TouchableOpacity
-              style={[styles.categoryCard, { backgroundColor: '#D1FAE5', borderLeftColor: '#10B981' }]}
-              onPress={() => navigation.navigate('Bookings', { initialStatus: 'CONFIRMED', filterBy: 'status' })}
-              activeOpacity={0.7}
-            >
-              <View style={styles.categoryCardHeader}>
-                <Icon source="check-circle" size={24} color="#10B981" />
-                <Text variant="headlineSmall" style={[styles.categoryValue, { color: '#10B981' }]}>
-                  {dashboardData.bookings.confirmed}
-                </Text>
-              </View>
-              <Text variant="titleMedium" style={styles.categoryTitle}>
-                Confirmed Bookings
-              </Text>
-              <Text variant="bodySmall" style={styles.categorySubtitle}>
-                Ready for delivery
-              </Text>
-            </TouchableOpacity>
-
-            {/* Total Bookings Card */}
-            <TouchableOpacity
-              style={[styles.categoryCard, { backgroundColor: '#F3F4F6', borderLeftColor: '#6B7280' }]}
-              onPress={() => navigation.navigate('Bookings', { initialStatus: 'ALL', filterBy: 'status' })}
-              activeOpacity={0.7}
-            >
-              <View style={styles.categoryCardHeader}>
-                <Icon source="bookmark-multiple" size={24} color="#6B7280" />
-                <Text variant="headlineSmall" style={[styles.categoryValue, { color: '#6B7280' }]}>
+                <Text style={styles.bookingsHeaderCount}>
                   {dashboardData.bookings.total}
                 </Text>
               </View>
-              <Text variant="titleMedium" style={styles.categoryTitle}>
-                Total Bookings
-              </Text>
-              <Text variant="bodySmall" style={styles.categorySubtitle}>
-                All bookings
+            </View>
+            <TouchableOpacity 
+              style={styles.viewAllButton}
+              onPress={() => navigation.navigate('Bookings', { initialFilter: 'all' })}
+            >
+              <Text style={styles.viewAllButtonText}>
+                View All {'>'}
               </Text>
             </TouchableOpacity>
           </View>
+          
+          <Text style={styles.sectionTitle}>
+            Bookings Summary
+          </Text>
+          
+          <View style={styles.summaryGrid}>
+            {/* All Bookings */}
+            <View style={styles.summaryCard}>
+              <View style={[styles.summaryIconContainer, { backgroundColor: '#E0F2FE' }]}>
+                <Icon source="format-list-bulleted" size={24} color="#3B82F6" />
+              </View>
+              <Text style={[styles.summaryCount, { color: '#3B82F6' }]}>
+                {dashboardData.bookings.total}
+              </Text>
+              <Text style={styles.summaryLabel}>
+                All Bookings
+              </Text>
+            </View>
+
+            {/* Pending */}
+            <View style={styles.summaryCard}>
+              <View style={[styles.summaryIconContainer, { backgroundColor: '#FFF3CD' }]}>
+                <Icon source="clock" size={24} color="#F59E0B" />
+              </View>
+              <Text style={[styles.summaryCount, { color: '#F59E0B' }]}>
+                {dashboardData.bookings.pending}
+              </Text>
+              <Text style={styles.summaryLabel}>
+                Pending
+              </Text>
+            </View>
+
+            {/* Retailed */}
+            <View style={styles.summaryCard}>
+              <View style={[styles.summaryIconContainer, { backgroundColor: '#E8F5E8' }]}>
+                <Icon source="truck-delivery" size={24} color="#10B981" />
+              </View>
+              <Text style={[styles.summaryCount, { color: '#10B981' }]}>
+                {dashboardData.bookings.retailed}
+              </Text>
+              <Text style={styles.summaryLabel}>
+                Retailed
+              </Text>
+            </View>
+
+            {/* Cancelled */}
+            <View style={styles.summaryCard}>
+              <View style={[styles.summaryIconContainer, { backgroundColor: '#FEE2E2' }]}>
+                <Icon source="close-circle" size={24} color="#EF4444" />
+              </View>
+              <Text style={[styles.summaryCount, { color: '#EF4444' }]}>
+                {dashboardData.bookings.cancelled}
+              </Text>
+              <Text style={styles.summaryLabel}>
+                Cancelled
+              </Text>
+            </View>
+          </View>
         </View>
 
-        {/* Stock Overview Card */}
-        <Card style={styles.stockCard}>
-          <Card.Content style={styles.stockContent}>
-            <View style={styles.stockHeader}>
-              <Text variant="titleLarge" style={styles.stockTitle}>
-                MotorSync Stock
-              </Text>
-              <TouchableOpacity
-                onPress={() => navigation.navigate('Stock')}
-                style={styles.viewStockButton}
-              >
-                <Text variant="bodySmall" style={styles.viewStockText}>
-                  View All
-                </Text>
-                <Icon source="chevron-right" size={16} color="#3B82F6" />
-              </TouchableOpacity>
-            </View>
-            
-            <Text variant="displaySmall" style={styles.stockValue}>
-              {dashboardData.stock.totalVehicles}
+        {/* Stock Section */}
+        <View style={styles.section}>
+          <View style={styles.stockHeader}>
+            <Text style={styles.sectionTitle}>
+              MotorSync Stock
             </Text>
-            <Text variant="bodyMedium" style={styles.stockLabel}>
-              Total Vehicles in Stock
-            </Text>
-            
-            <View style={styles.stockBreakdown}>
-              <View style={styles.stockItem}>
-                <View style={[styles.stockIndicator, { backgroundColor: '#10B981' }]} />
-                <Text variant="bodySmall" style={styles.stockItemLabel}>
-                  Available: {dashboardData.stock.availableVehicles}
-                </Text>
-              </View>
-              <View style={styles.stockItem}>
-                <View style={[styles.stockIndicator, { backgroundColor: '#F59E0B' }]} />
-                <Text variant="bodySmall" style={styles.stockItemLabel}>
-                  Reserved: {dashboardData.stock.reservedVehicles}
-                </Text>
-              </View>
-              <View style={styles.stockItem}>
-                <View style={[styles.stockIndicator, { backgroundColor: '#3B82F6' }]} />
-                <Text variant="bodySmall" style={styles.stockItemLabel}>
-                  Sold: {dashboardData.stock.soldVehicles}
-                </Text>
-              </View>
-            </View>
-            
-            <View style={styles.stockValueSection}>
-              <Text variant="bodyMedium" style={styles.stockValueLabel}>
-                Total Stock Value
+            <TouchableOpacity 
+              style={styles.viewAllButton}
+              onPress={() => navigation.navigate('Stock')}
+            >
+              <Text style={styles.viewAllButtonText}>
+                View All {'>'}
               </Text>
-              <Text variant="titleLarge" style={styles.stockValueAmount}>
-                {dashboardData.stock.totalValue}
+            </TouchableOpacity>
+          </View>
+          
+          {dashboardData.stock.totalVehicles === 0 ? (
+            <View style={styles.stockWarningCard}>
+              <View style={styles.stockWarningIcon}>
+                <Icon source="information" size={16} color="#F59E0B" />
+              </View>
+              <Text style={styles.stockWarningText}>
+                Stock data unavailable - Check console for details
               </Text>
             </View>
-          </Card.Content>
-        </Card>
+          ) : null}
+          
+          <Text style={styles.stockValue}>
+            {dashboardData.stock.totalVehicles}
+          </Text>
+          <Text style={styles.stockLabel}>
+            Total Vehicles in Stock
+          </Text>
+        </View>
 
         {/* Team Management Section - Only for Managers */}
         {canManageTeams && teamHierarchy && (
@@ -716,6 +747,9 @@ export function DashboardScreen({ navigation }: any): React.JSX.Element {
             </Card.Content>
           </Card>
         </View>
+        
+        {/* Debug Component - Only in development */}
+        {__DEV__ && <DebugRoleButton />}
         </ScrollView>
       </SafeAreaView>
     </View>
@@ -782,12 +816,6 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '500',
     marginBottom: 4,
-  },
-  userName: {
-    color: '#0F172A',
-    fontWeight: '800',
-    fontSize: 28,
-    letterSpacing: -0.5,
   },
   roleText: {
     color: '#475569',
@@ -877,12 +905,6 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.xxl,
     paddingHorizontal: spacing.xxl,
   },
-  stockHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: spacing.lg,
-  },
   stockTitle: {
     color: '#0F172A',
     fontWeight: '700',
@@ -900,19 +922,6 @@ const styles = StyleSheet.create({
     color: '#3B82F6',
     fontWeight: '600',
     marginRight: spacing.xs,
-  },
-  stockValue: {
-    color: '#3B82F6',
-    fontWeight: '900',
-    fontSize: 48,
-    lineHeight: 54,
-    marginBottom: spacing.xs,
-    letterSpacing: -1.5,
-  },
-  stockLabel: {
-    color: '#64748B',
-    fontWeight: '500',
-    marginBottom: spacing.lg,
   },
   stockBreakdown: {
     marginBottom: spacing.lg,
@@ -946,21 +955,6 @@ const styles = StyleSheet.create({
     color: '#10B981',
     fontWeight: '700',
     fontSize: 24,
-  },
-  section: {
-    marginBottom: spacing.xxl,
-  },
-  sectionTitle: {
-    color: '#0F172A',
-    marginBottom: spacing.sm,
-    fontWeight: '800',
-    fontSize: 20,
-    letterSpacing: -0.3,
-  },
-  sectionSubtitle: {
-    color: '#64748B',
-    marginBottom: spacing.lg,
-    fontWeight: '500',
   },
   cardRow: {
     flexDirection: 'row',
@@ -1128,10 +1122,6 @@ const styles = StyleSheet.create({
   activityTime: {
     color: theme.colors.onSurfaceVariant,
   },
-  viewAllButton: {
-    alignSelf: 'center',
-    marginTop: spacing.sm,
-  },
   loadingContainer: {
     flex: 1,
     justifyContent: 'center',
@@ -1176,5 +1166,238 @@ const styles = StyleSheet.create({
     color: theme.colors.onSurfaceVariant,
     textAlign: 'center',
     opacity: 0.7,
+  },
+  // Dashboard Styles - Matching Image Design
+  userInfoCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    marginBottom: 24,
+    padding: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  userInfoContent: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+  },
+  userInfoLeft: {
+    flex: 1,
+  },
+  userInfoRight: {
+    alignItems: 'flex-end',
+  },
+  userName: {
+    fontSize: 24,
+    fontWeight: '700',
+    color: '#0F172A',
+    marginBottom: 4,
+  },
+  userCode: {
+    fontSize: 14,
+    color: '#64748B',
+    marginBottom: 4,
+  },
+  userLocation: {
+    fontSize: 14,
+    color: '#64748B',
+    marginBottom: 4,
+  },
+  userBrands: {
+    fontSize: 14,
+    color: '#64748B',
+  },
+  universalButton: {
+    backgroundColor: '#3B82F6',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 8,
+  },
+  universalButtonText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  section: {
+    marginBottom: 24,
+  },
+  sectionTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: '#0F172A',
+    marginBottom: 8,
+  },
+  sectionSubtitle: {
+    fontSize: 14,
+    color: '#64748B',
+    marginBottom: 16,
+  },
+  hotEnquiriesCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    padding: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 2,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  hotEnquiriesContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+  },
+  hotEnquiriesLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+  },
+  hotEnquiriesIconContainer: {
+    width: 40,
+    height: 40,
+    borderRadius: 8,
+    backgroundColor: '#FFF7ED',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 12,
+  },
+  hotEnquiriesText: {
+    flex: 1,
+  },
+  hotEnquiriesLabel: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#0F172A',
+    marginBottom: 4,
+  },
+  hotEnquiriesCount: {
+    fontSize: 32,
+    fontWeight: '700',
+    color: '#FF6F00',
+  },
+  viewAllButton: {
+    backgroundColor: '#F8FAFC',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+  },
+  viewAllButtonText: {
+    color: '#64748B',
+    fontSize: 14,
+    fontWeight: '500',
+  },
+  summaryGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'space-between',
+    marginTop: 16,
+  },
+  summaryCard: {
+    width: '48%',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 12,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 1,
+    alignItems: 'center',
+  },
+  summaryIconContainer: {
+    width: 40,
+    height: 40,
+    borderRadius: 8,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  summaryCount: {
+    fontSize: 24,
+    fontWeight: '700',
+    marginBottom: 4,
+  },
+  summaryLabel: {
+    fontSize: 14,
+    color: '#64748B',
+    textAlign: 'center',
+  },
+  bookingsHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  bookingsHeaderLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+  },
+  bookingsIconContainer: {
+    width: 40,
+    height: 40,
+    borderRadius: 8,
+    backgroundColor: '#E0F2FE',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 12,
+  },
+  bookingsHeaderText: {
+    flex: 1,
+  },
+  bookingsHeaderTitle: {
+    fontSize: 16,
+    color: '#64748B',
+    marginBottom: 4,
+  },
+  bookingsHeaderCount: {
+    fontSize: 32,
+    fontWeight: '700',
+    color: '#3B82F6',
+  },
+  stockHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  stockWarningCard: {
+    backgroundColor: '#FEF3C7',
+    borderRadius: 8,
+    padding: 12,
+    marginBottom: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#F59E0B',
+  },
+  stockWarningIcon: {
+    marginRight: 8,
+  },
+  stockWarningText: {
+    color: '#92400E',
+    fontSize: 14,
+    flex: 1,
+  },
+  stockValue: {
+    fontSize: 32,
+    fontWeight: '700',
+    color: '#3B82F6',
+    textAlign: 'center',
+    marginBottom: 8,
+  },
+  stockLabel: {
+    fontSize: 14,
+    color: '#64748B',
+    textAlign: 'center',
   },
 });

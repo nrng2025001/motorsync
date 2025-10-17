@@ -31,6 +31,7 @@ import * as BookingService from '../../services/booking.service';
 import { Booking, TimelineCategory } from '../../services/types';
 import { MainStackParamList } from '../../navigation/MainNavigator';
 import { theme, spacing, shadows, borderRadius } from '../../utils/theme';
+import { useAuth } from '../../context/AuthContext';
 
 const { width, height } = Dimensions.get('window');
 
@@ -88,12 +89,15 @@ const BackgroundPattern = () => (
 );
 
 type TimelineTab = 'all' | TimelineCategory;
+type StatusFilter = 'all' | 'pending' | 'retailed' | 'cancelled';
 
 export function BookingsScreen(): React.JSX.Element {
   const navigation = useNavigation<NavigationProp>();
+  const { state: authState } = useAuth();
 
   // State
   const [selectedTimeline, setSelectedTimeline] = useState<TimelineTab>('all');
+  const [selectedStatus, setSelectedStatus] = useState<StatusFilter>('all');
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -106,8 +110,15 @@ export function BookingsScreen(): React.JSX.Element {
       if (showLoading) setLoading(true);
       
       const timeline = selectedTimeline === 'all' ? undefined : selectedTimeline;
-      const response = await BookingService.getMyBookings(timeline);
-      setBookings(response.bookings || []);
+      const response = await BookingService.getMyBookings(timeline, undefined, authState.user?.role?.name);
+      
+      // Ensure we have a valid bookings array
+      const bookingsArray = response.bookings || [];
+      if (!Array.isArray(bookingsArray)) {
+        setBookings([]);
+      } else {
+        setBookings(bookingsArray);
+      }
     } catch (error: any) {
       console.error('Error fetching bookings:', error);
       setSnackbar({
@@ -118,7 +129,7 @@ export function BookingsScreen(): React.JSX.Element {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [selectedTimeline]);
+  }, [selectedTimeline, authState.user?.role]);
 
   // Initial load and timeline change
   useEffect(() => {
@@ -143,24 +154,54 @@ export function BookingsScreen(): React.JSX.Element {
 
   // Filter bookings by search query
   const filteredBookings = bookings.filter((booking) => {
-    if (!searchQuery) return true;
-    
-    const query = searchQuery.toLowerCase();
-    return (
-      booking.customerName.toLowerCase().includes(query) ||
-      booking.customerPhone.includes(query) ||
-      booking.variant.toLowerCase().includes(query)
-    );
+    // Search filter
+    if (searchQuery) {
+      const query = searchQuery.toLowerCase();
+      const matchesSearch = (
+        booking.customerName.toLowerCase().includes(query) ||
+        booking.customerPhone.includes(query) ||
+        booking.variant.toLowerCase().includes(query)
+      );
+      if (!matchesSearch) return false;
+    }
+
+    // Status filter
+    if (selectedStatus !== 'all') {
+      switch (selectedStatus) {
+        case 'pending':
+          return ['PENDING', 'ASSIGNED', 'IN_PROGRESS', 'CONFIRMED', 'APPROVED'].includes(booking.status);
+        case 'retailed':
+          return booking.status === 'DELIVERED';
+        case 'cancelled':
+          return ['CANCELLED', 'REJECTED', 'NO_SHOW'].includes(booking.status);
+        default:
+          return true;
+      }
+    }
+
+    return true;
   });
+
 
   // Timeline stats
   const getTimelineStats = () => {
+    const today = new Date();
+    const todayStr = today.toISOString().split('T')[0];
+    
     return {
       all: bookings.length,
-      today: bookings.filter(b => b.timeline === 'today').length,
-      delivery_today: bookings.filter(b => b.timeline === 'delivery_today').length,
-      pending_update: bookings.filter(b => b.timeline === 'pending_update').length,
-      overdue: bookings.filter(b => b.timeline === 'overdue').length,
+      today: bookings.filter(b => b.bookingDate && b.bookingDate.startsWith(todayStr)).length,
+      delivery_today: bookings.filter(b => b.expectedDeliveryDate && b.expectedDeliveryDate.startsWith(todayStr)).length,
+      pending_update: bookings.filter(b => {
+        const bookingDate = new Date(b.bookingDate);
+        const hoursDiff = (today.getTime() - bookingDate.getTime()) / (1000 * 60 * 60);
+        return hoursDiff > 24 && (b.status === 'PENDING' || b.status === 'ASSIGNED');
+      }).length,
+      overdue: bookings.filter(b => {
+        if (!b.expectedDeliveryDate) return false;
+        const deliveryDate = new Date(b.expectedDeliveryDate);
+        return deliveryDate < today && !['DELIVERED', 'CANCELLED'].includes(b.status);
+      }).length,
     };
   };
 
@@ -236,6 +277,46 @@ export function BookingsScreen(): React.JSX.Element {
           </Text>
           <Text style={[
             styles.timelineTabLabel,
+            { color: isSelected ? '#FFFFFF' : '#64748B' }
+          ]}>
+            {label}
+          </Text>
+        </View>
+      </TouchableOpacity>
+    );
+  };
+
+  const renderStatusTab = (
+    status: StatusFilter,
+    icon: string,
+    label: string,
+    color: string
+  ) => {
+    const isSelected = selectedStatus === status;
+
+    return (
+      <TouchableOpacity
+        key={status}
+        style={[
+          styles.statusTab,
+          { 
+            backgroundColor: isSelected ? color : '#FFFFFF',
+            borderWidth: isSelected ? 2 : 1.5,
+            borderColor: isSelected ? color : '#E2E8F0',
+          }
+        ]}
+        onPress={() => setSelectedStatus(status)}
+        activeOpacity={0.7}
+      >
+        <View style={styles.statusTabContent}>
+          <Text style={[styles.statusTabIcon, { 
+            color: isSelected ? '#FFFFFF' : '#64748B',
+            opacity: isSelected ? 1 : 0.6,
+          }]}>
+            {icon}
+          </Text>
+          <Text style={[
+            styles.statusTabLabel,
             { color: isSelected ? '#FFFFFF' : '#64748B' }
           ]}>
             {label}
@@ -365,6 +446,21 @@ export function BookingsScreen(): React.JSX.Element {
           </ScrollView>
         </View>
 
+        {/* Status Filter Tabs */}
+        <View style={styles.statusFilterContainer}>
+          <Text style={styles.statusFilterTitle}>Filter by Status</Text>
+          <ScrollView 
+            horizontal 
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.statusTabsContainer}
+          >
+            {renderStatusTab('all', '📋', 'All', '#3B82F6')}
+            {renderStatusTab('pending', '⏳', 'Pending', '#F59E0B')}
+            {renderStatusTab('retailed', '✅', 'Retailed', '#10B981')}
+            {renderStatusTab('cancelled', '❌', 'Cancelled', '#EF4444')}
+          </ScrollView>
+        </View>
+
         {/* Bookings List */}
         {loading && !refreshing ? (
           <View style={styles.loadingContainer}>
@@ -419,6 +515,7 @@ export function BookingsScreen(): React.JSX.Element {
                       onPress={() => handleBookingPress(booking)}
                       onUpdate={() => handleUpdateBooking(booking)}
                       showActions={true}
+                      userRole={authState.user?.role?.name}
                     />
                   </Animated.View>
                 ))}
@@ -608,6 +705,49 @@ const styles = StyleSheet.create({
     fontSize: 18,
   },
   timelineTabLabel: {
+    fontWeight: '700',
+    fontSize: 14,
+    letterSpacing: -0.3,
+  },
+  statusFilterContainer: {
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    backgroundColor: '#FFFFFF',
+  },
+  statusFilterTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#1F2937',
+    marginBottom: 12,
+  },
+  statusTabsContainer: {
+    paddingRight: 20,
+  },
+  statusTab: {
+    minWidth: 100,
+    height: 44,
+    borderRadius: 12,
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 6,
+    elevation: 2,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 12,
+  },
+  statusTabContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+  },
+  statusTabIcon: {
+    fontSize: 18,
+  },
+  statusTabLabel: {
     fontWeight: '700',
     fontSize: 14,
     letterSpacing: -0.3,

@@ -1,435 +1,202 @@
-import { apiClient, handleApiCall, ApiResponse, PaginatedResponse } from './client';
+import { apiClient } from './client';
+import { 
+  Enquiry, 
+  EnquiryFilters, 
+  PaginatedResponse, 
+  ApiResponse,
+  EnquiryCategory,
+  EnquiryStatus 
+} from '../services/types';
 
-/**
- * Enquiries API endpoints
- * 
- * This file contains all enquiry-related API calls:
- * - CRUD operations for enquiries
- * - Status management
- * - Assignment operations
- * - Search and filtering
- */
+class EnquiryAPI {
+  async getEnquiries(params?: EnquiryFilters): Promise<PaginatedResponse<Enquiry>> {
+    const queryParams = new URLSearchParams();
+    
+    if (params?.page) queryParams.append('page', params.page.toString());
+    if (params?.limit) queryParams.append('limit', params.limit.toString());
+    if (params?.status) queryParams.append('status', params.status);
+    if (params?.category) queryParams.append('category', params.category);
+    if (params?.search) queryParams.append('search', params.search);
+    if (params?.sortBy) queryParams.append('sortBy', params.sortBy);
+    if (params?.sortOrder) queryParams.append('sortOrder', params.sortOrder);
 
-/**
- * Enquiry status types
- */
-export type EnquiryStatus = 'OPEN' | 'IN_PROGRESS' | 'CLOSED';
-
-/**
- * Enquiry category types
- */
-export type EnquiryCategory = 'HOT' | 'LOST' | 'BOOKED';
-
-/**
- * Enquiry source types
- */
-export type EnquirySource = 'SHOWROOM' | 'WEBSITE' | 'PHONE' | 'REFERRAL' | 'WALK_IN';
-
-/**
- * Enquiry interface
- */
-export interface Enquiry {
-  id: string;
-  customerName: string;
-  customerContact: string;
-  customerEmail: string;
-  model: string;
-  variant: string;
-  color: string;
-  source: EnquirySource;
-  status: EnquiryStatus;
-  category: EnquiryCategory; // NEW FIELD - defaults to HOT
-  expectedBookingDate?: string;
-  caRemarks?: string;
-  assignedToId?: string;
-  assignedToName?: string;
-  createdAt: string;
-  updatedAt: string;
-  bookings?: any[];
-  quotations?: any[];
-}
-
-/**
- * Create enquiry request interface
- */
-export interface CreateEnquiryRequest {
-  customerName: string;
-  customerContact: string;
-  customerEmail?: string;
-  model: string;
-  variant?: string;
-  color?: string;
-  source: EnquirySource;
-  expectedBookingDate?: string;
-  caRemarks?: string;
-  dealerCode?: string;
-}
-
-/**
- * Update enquiry request interface
- */
-export interface UpdateEnquiryRequest {
-  customerName?: string;
-  customerContact?: string;
-  customerEmail?: string;
-  model?: string;
-  variant?: string;
-  color?: string;
-  source?: EnquirySource;
-  status?: EnquiryStatus;
-  category?: EnquiryCategory; // NEW FIELD - for category updates
-  expectedBookingDate?: string;
-  caRemarks?: string;
-  assignedToId?: string;
-}
-
-/**
- * Enquiry filters interface
- */
-export interface EnquiryFilters {
-  status?: EnquiryStatus[];
-  category?: EnquiryCategory; // Changed to single category instead of array
-  source?: EnquirySource[];
-  assignedTo?: string[];
-  model?: string[];
-  variant?: string[];
-  color?: string[];
-  dateFrom?: string;
-  dateTo?: string;
-  search?: string;
-}
-
-/**
- * Enquiry list parameters interface
- */
-export interface EnquiryListParams extends EnquiryFilters {
-  page?: number;
-  limit?: number;
-  sortBy?: 'createdAt' | 'updatedAt' | 'customerName' | 'priority';
-  sortOrder?: 'asc' | 'desc';
-}
-
-/**
- * Assignment request interface
- */
-export interface AssignEnquiryRequest {
-  assignedToId: string;
-  notes?: string;
-}
-
-/**
- * Enquiry statistics interface
- */
-export interface EnquiryStats {
-  total: number;
-  new: number;
-  assigned: number;
-  inProgress: number;
-  quoted: number;
-  closed: number;
-  cancelled: number;
-  conversionRate: number;
-  avgResponseTime: number; // in hours
-}
-
-/**
- * Enquiries API class
- * Contains all enquiry-related API methods
- */
-export class EnquiriesAPI {
-  /**
-   * Get list of enquiries with optional filtering and pagination
-   * 
-   * @param params - Query parameters for filtering and pagination
-   * @returns Promise<PaginatedResponse<Enquiry>>
-   * 
-   * Example usage:
-   * ```typescript
-   * const enquiries = await EnquiriesAPI.getEnquiries({
-   *   status: ['new', 'assigned'],
-   *   page: 1,
-   *   limit: 20,
-   *   sortBy: 'createdAt',
-   *   sortOrder: 'desc'
-   * });
-   * ```
-   */
-  static async getEnquiries(params?: EnquiryListParams): Promise<Enquiry[]> {
-    const response = await handleApiCall(() =>
-      apiClient.get<any>('/enquiries', { params })
-    ) as any;
-    return response.enquiries || response.data || [];
+    return apiClient.get(`/enquiries?${queryParams.toString()}`);
   }
 
-  /**
-   * Get a specific enquiry by ID
-   * 
-   * @param id - Enquiry ID
-   * @returns Promise<Enquiry>
-   * 
-   * Note: Backend returns data in format: { enquiry: {...} }
-   */
-  static async getEnquiry(id: string): Promise<Enquiry> {
-    const response = await handleApiCall(() =>
-      apiClient.get<any>(`/enquiries/${id}`)
-    );
-    return response.enquiry || response.data || response;
+  async getEnquiryById(id: string): Promise<ApiResponse<Enquiry>> {
+    return apiClient.get(`/enquiries/${id}`);
   }
 
-  /**
-   * Create a new enquiry
-   * 
-   * @param enquiryData - Enquiry creation data
-   * @returns Promise<Enquiry>
-   * 
-   * Example usage:
-   * ```typescript
-   * const newEnquiry = await EnquiriesAPI.createEnquiry({
-   *   customerName: 'John Doe',
-   *   customerEmail: 'john@example.com',
-   *   customerPhone: '+1-555-0123',
-   *   vehicleInterest: '2024 Toyota Camry',
-   *   source: 'website',
-   *   priority: 'medium'
-   * });
-   * ```
-   */
-  static async createEnquiry(enquiryData: CreateEnquiryRequest): Promise<Enquiry> {
-    return handleApiCall(() =>
-      apiClient.post<ApiResponse<Enquiry>>('/enquiries', enquiryData)
-    );
+
+  async createEnquiry(data: {
+    customerName: string;
+    customerContact: string;
+    customerEmail?: string;
+    variant?: string;
+    color?: string;
+    expectedBookingDate?: string;
+    caRemarks?: string;
+  }): Promise<ApiResponse<Enquiry>> {
+    return apiClient.post('/enquiries', data);
   }
 
-  /**
-   * Update an existing enquiry
-   * 
-   * @param id - Enquiry ID
-   * @param enquiryData - Enquiry update data
-   * @returns Promise<Enquiry>
-   */
-  static async updateEnquiry(id: string, enquiryData: UpdateEnquiryRequest): Promise<Enquiry> {
-    return handleApiCall(() =>
-      apiClient.put<ApiResponse<Enquiry>>(`/enquiries/${id}`, enquiryData)
-    );
+  async updateEnquiry(id: string, data: {
+    customerName?: string;
+    customerContact?: string;
+    customerEmail?: string;
+    variant?: string;
+    color?: string;
+    expectedBookingDate?: string;
+    status?: EnquiryStatus;
+    category?: EnquiryCategory;
+    caRemarks?: string;
+    gmRemarks?: string;
+    assignedToUserId?: string;
+  }): Promise<ApiResponse<Enquiry>> {
+    return apiClient.put(`/enquiries/${id}`, data);
   }
 
-  /**
-   * Update enquiry category (handles auto-booking when category is BOOKED)
-   * 
-   * @param id - Enquiry ID
-   * @param category - New category
-   * @returns Promise<{enquiry: Enquiry, booking?: any, stockValidation?: any}>
-   */
-  static async updateEnquiryCategory(id: string, category: EnquiryCategory): Promise<{enquiry: Enquiry, booking?: any, stockValidation?: any}> {
-    try {
-      const result = await handleApiCall(() =>
-        apiClient.put<ApiResponse<{enquiry: Enquiry, booking?: any, stockValidation?: any}>>(`/enquiries/${id}`, { category })
-      );
-      return result;
-    } catch (error: any) {
-      // Handle stock validation errors
-      if (error.message && error.message.includes('out of stock')) {
-        throw new Error(`Cannot convert to booking: ${error.message}`);
-      }
-      throw error;
-    }
+  async deleteEnquiry(id: string): Promise<ApiResponse<void>> {
+    return apiClient.delete(`/enquiries/${id}`);
   }
 
-  /**
-   * Delete an enquiry
-   * 
-   * @param id - Enquiry ID
-   * @returns Promise<void>
-   */
-  static async deleteEnquiry(id: string): Promise<void> {
-    return handleApiCall(() =>
-      apiClient.delete<ApiResponse<void>>(`/enquiries/${id}`)
-    );
+  async getEnquiryStats(): Promise<ApiResponse<{
+    total: number;
+    byStatus: Record<string, number>;
+    byCategory: Record<string, number>;
+  }>> {
+    return apiClient.get('/enquiries/stats');
   }
 
-  /**
-   * Assign an enquiry to a user
-   * 
-   * @param id - Enquiry ID
-   * @param assignmentData - Assignment data
-   * @returns Promise<Enquiry>
-   */
-  static async assignEnquiry(id: string, assignmentData: AssignEnquiryRequest): Promise<Enquiry> {
-    return handleApiCall(() =>
-      apiClient.post<ApiResponse<Enquiry>>(`/enquiries/${id}/assign`, assignmentData)
-    );
+  // Additional methods for enquiry management
+  async getVariants(model?: string): Promise<string[]> {
+    const response = await apiClient.get('/enquiries/variants', {
+      params: model ? { model } : {}
+    });
+    return response.data || [];
   }
 
-  /**
-   * Unassign an enquiry
-   * 
-   * @param id - Enquiry ID
-   * @returns Promise<Enquiry>
-   */
-  static async unassignEnquiry(id: string): Promise<Enquiry> {
-    return handleApiCall(() =>
-      apiClient.post<ApiResponse<Enquiry>>(`/enquiries/${id}/unassign`)
-    );
+  async getModels(): Promise<{ modelsByBrand: { [brand: string]: string[] } }> {
+    const response = await apiClient.get('/enquiries/models');
+    return response.data || { modelsByBrand: {} };
   }
 
-  /**
-   * Update enquiry status
-   * 
-   * @param id - Enquiry ID
-   * @param status - New status
-   * @param notes - Optional status change notes
-   * @returns Promise<Enquiry>
-   */
-  static async updateStatus(id: string, status: EnquiryStatus, notes?: string): Promise<Enquiry> {
-    return handleApiCall(() =>
-      apiClient.patch<ApiResponse<Enquiry>>(`/enquiries/${id}/status`, { status, notes })
-    );
+  async getColors(): Promise<string[]> {
+    const response = await apiClient.get('/enquiries/colors');
+    return response.data || [];
   }
 
-  /**
-   * Update enquiry category
-   * 
-   * @param id - Enquiry ID
-   * @param category - New category
-   * @param remarks - Optional remarks for category change
-   * @returns Promise<Enquiry>
-   */
-  static async updateCategory(id: string, category: EnquiryCategory, remarks?: string): Promise<Enquiry> {
-    return handleApiCall(() =>
-      apiClient.put<ApiResponse<Enquiry>>(`/enquiries/${id}`, { 
-        category,
-        ...(remarks && { caRemarks: remarks })
-      })
-    );
+  async getSources(): Promise<string[]> {
+    const response = await apiClient.get('/enquiries/sources');
+    return response.data || [];
   }
 
-  /**
-   * Add notes to an enquiry
-   * 
-   * @param id - Enquiry ID
-   * @param notes - Notes to add
-   * @returns Promise<Enquiry>
-   */
-  static async addNotes(id: string, notes: string): Promise<Enquiry> {
-    return handleApiCall(() =>
-      apiClient.post<ApiResponse<Enquiry>>(`/enquiries/${id}/notes`, { notes })
-    );
+  async updateCategory(id: string, category: EnquiryCategory): Promise<ApiResponse<Enquiry>> {
+    return apiClient.put(`/enquiries/${id}`, { category });
   }
 
-  /**
-   * Get enquiry statistics
-   * 
-   * @param filters - Optional filters for statistics
-   * @returns Promise<EnquiryStats>
-   */
-  static async getStats(filters?: EnquiryFilters): Promise<EnquiryStats> {
-    return handleApiCall(() =>
-      apiClient.get<ApiResponse<EnquiryStats>>('/enquiries/stats', { params: filters })
-    );
+  async updateStatus(id: string, status: EnquiryStatus): Promise<ApiResponse<Enquiry>> {
+    return apiClient.put(`/enquiries/${id}`, { status });
   }
 
-  /**
-   * Search enquiries
-   * 
-   * @param query - Search query
-   * @param filters - Optional additional filters
-   * @returns Promise<Enquiry[]>
-   */
-  static async searchEnquiries(query: string, filters?: EnquiryFilters): Promise<Enquiry[]> {
-    return handleApiCall(() =>
-      apiClient.get<ApiResponse<Enquiry[]>>('/enquiries/search', {
-        params: { q: query, ...filters }
-      })
-    );
+  async addNotes(id: string, notes: string): Promise<ApiResponse<Enquiry>> {
+    return apiClient.post(`/enquiries/${id}/notes`, { notes });
   }
 
-  /**
-   * Get enquiries assigned to current user
-   * 
-   * @param params - Query parameters
-   * @returns Promise<PaginatedResponse<Enquiry>>
-   */
-  static async getMyEnquiries(params?: EnquiryListParams): Promise<Enquiry[]> {
-    const response = await handleApiCall(() =>
-      apiClient.get<any>('/enquiries/my', { params })
-    );
-    return response.enquiries || response.data || [];
+  async assignEnquiry(id: string, assignedToUserId: string): Promise<ApiResponse<Enquiry>> {
+    return apiClient.post(`/enquiries/${id}/assign`, { assignedToUserId });
   }
 
-  /**
-   * Get available vehicle models by brand
-   * 
-   * @returns Promise<{ modelsByBrand: { [brand: string]: string[] } }>
-   */
-  static async getModels(): Promise<{ modelsByBrand: { [brand: string]: string[] } }> {
-    return handleApiCall(() =>
-      apiClient.get<ApiResponse<{ modelsByBrand: { [brand: string]: string[] } }>>('/enquiries/models')
-    );
+  async unassignEnquiry(id: string): Promise<ApiResponse<Enquiry>> {
+    return apiClient.post(`/enquiries/${id}/unassign`);
   }
 
-  /**
-   * Get available variants (filterable by model)
-   * 
-   * @param model - Optional model filter
-   * @returns Promise<string[]>
-   */
-  static async getVariants(model?: string): Promise<string[]> {
-    return handleApiCall(() =>
-      apiClient.get<ApiResponse<string[]>>('/enquiries/variants', {
-        params: model ? { model } : {}
-      })
-    );
+  // Additional comprehensive methods from technical guide
+  async getAvailableModels(): Promise<ApiResponse<{ modelsByBrand: { [brand: string]: string[] } }>> {
+    return apiClient.get('/enquiries/available-models');
   }
 
-  /**
-   * Get available colors
-   * 
-   * @returns Promise<string[]>
-   */
-  static async getColors(): Promise<string[]> {
-    return handleApiCall(() =>
-      apiClient.get<ApiResponse<string[]>>('/enquiries/colors')
-    );
+  async getAvailableVariants(model?: string): Promise<ApiResponse<string[]>> {
+    const params = model ? { model } : {};
+    return apiClient.get('/enquiries/available-variants', { params });
   }
 
-  /**
-   * Get enquiry source options
-   * 
-   * @returns Promise<string[]>
-   */
-  static async getSources(): Promise<string[]> {
-    return handleApiCall(() =>
-      apiClient.get<ApiResponse<string[]>>('/enquiries/sources')
-    );
+  async getAvailableColors(): Promise<ApiResponse<string[]>> {
+    return apiClient.get('/enquiries/available-colors');
   }
 
-  /**
-   * Bulk update enquiries
-   * 
-   * @param ids - Array of enquiry IDs
-   * @param updates - Updates to apply
-   * @returns Promise<Enquiry[]>
-   */
-  static async bulkUpdate(ids: string[], updates: UpdateEnquiryRequest): Promise<Enquiry[]> {
-    return handleApiCall(() =>
-      apiClient.patch<ApiResponse<Enquiry[]>>('/enquiries/bulk', { ids, updates })
-    );
+  async getEnquirySources(): Promise<ApiResponse<string[]>> {
+    return apiClient.get('/enquiries/sources');
   }
 
-  /**
-   * Export enquiries to CSV
-   * 
-   * @param filters - Optional filters for export
-   * @returns Promise<Blob>
-   */
-  static async exportToCSV(filters?: EnquiryFilters): Promise<Blob> {
-    return handleApiCall(() =>
-      apiClient.get('/enquiries/export/csv', {
-        params: filters,
-        responseType: 'blob'
-      })
-    );
+  // Bulk operations
+  async bulkUpdateStatus(enquiryIds: string[], status: EnquiryStatus): Promise<ApiResponse<{ updated: number; failed: number }>> {
+    return apiClient.post('/enquiries/bulk-update-status', { enquiryIds, status });
+  }
+
+  async bulkUpdateCategory(enquiryIds: string[], category: EnquiryCategory): Promise<ApiResponse<{ updated: number; failed: number }>> {
+    return apiClient.post('/enquiries/bulk-update-category', { enquiryIds, category });
+  }
+
+  // Advanced filtering and search
+  async searchEnquiries(query: string, filters?: {
+    status?: EnquiryStatus;
+    category?: EnquiryCategory;
+    dateFrom?: string;
+    dateTo?: string;
+    assignedTo?: string;
+  }): Promise<PaginatedResponse<Enquiry>> {
+    const params = new URLSearchParams();
+    params.append('search', query);
+    
+    if (filters?.status) params.append('status', filters.status);
+    if (filters?.category) params.append('category', filters.category);
+    if (filters?.dateFrom) params.append('dateFrom', filters.dateFrom);
+    if (filters?.dateTo) params.append('dateTo', filters.dateTo);
+    if (filters?.assignedTo) params.append('assignedTo', filters.assignedTo);
+
+    return apiClient.get(`/enquiries/search?${params.toString()}`);
+  }
+
+  // Analytics and reporting
+  async getEnquiryAnalytics(filters?: {
+    dateFrom?: string;
+    dateTo?: string;
+    groupBy?: 'day' | 'week' | 'month';
+  }): Promise<ApiResponse<{
+    total: number;
+    byStatus: Record<string, number>;
+    byCategory: Record<string, number>;
+    bySource: Record<string, number>;
+    trends: Array<{ date: string; count: number }>;
+  }>> {
+    const params = new URLSearchParams();
+    if (filters?.dateFrom) params.append('dateFrom', filters.dateFrom);
+    if (filters?.dateTo) params.append('dateTo', filters.dateTo);
+    if (filters?.groupBy) params.append('groupBy', filters.groupBy);
+
+    return apiClient.get(`/enquiries/analytics?${params.toString()}`);
+  }
+
+  // Export functionality
+  async exportEnquiries(filters?: EnquiryFilters): Promise<Blob> {
+    const queryParams = new URLSearchParams();
+    
+    if (filters?.page) queryParams.append('page', filters.page.toString());
+    if (filters?.limit) queryParams.append('limit', filters.limit.toString());
+    if (filters?.status) queryParams.append('status', filters.status);
+    if (filters?.category) queryParams.append('category', filters.category);
+    if (filters?.search) queryParams.append('search', filters.search);
+    if (filters?.sortBy) queryParams.append('sortBy', filters.sortBy);
+    if (filters?.sortOrder) queryParams.append('sortOrder', filters.sortOrder);
+
+    const response = await apiClient.get(`/enquiries/export?${queryParams.toString()}`, {
+      responseType: 'blob'
+    });
+    
+    return response.data;
   }
 }
 
-export default EnquiriesAPI;
+export const enquiryAPI = new EnquiryAPI();
+export default enquiryAPI;

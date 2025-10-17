@@ -9,7 +9,7 @@
 
 const axios = require('axios');
 
-const BACKEND_URL = 'http://localhost:4000/api';
+const BACKEND_URL = 'https://automotive-backend-frqe.onrender.com/api';
 
 async function testEndpoint(method, endpoint, description, expectedStatus = 200) {
   try {

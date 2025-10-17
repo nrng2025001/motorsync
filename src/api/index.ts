@@ -20,38 +20,25 @@ export type {
 } from './auth';
 
 // Export Enquiries API
-export { default as EnquiriesAPI } from './enquiries';
+export { default as EnquiriesAPI, enquiryAPI } from './enquiries';
 export type {
   Enquiry,
   EnquiryStatus,
   EnquirySource,
+  EnquiryCategory,
   CreateEnquiryRequest,
   UpdateEnquiryRequest,
-  EnquiryFilters,
-  EnquiryListParams,
-  AssignEnquiryRequest,
-  EnquiryStats,
-} from './enquiries';
+} from '../services/types';
 
 // Export Bookings API
-export { default as BookingsAPI } from './bookings';
+export { default as BookingsAPI, bookingAPI } from './bookings';
 export type {
   Booking,
   BookingStatus,
-  BookingSource,
-  CreateBookingRequest,
   UpdateBookingRequest,
-  BookingFilters,
-  BookingListParams,
-  AssignBookingRequest,
-  UpdateBookingStatusRequest,
-  AddRemarksRequest,
-  BookingStats,
-  ImportUploadResponse,
-  ImportPreviewResponse,
-  ImportError,
-  ImportStatus,
-} from './bookings';
+  StockAvailability,
+  TimelineCategory,
+} from '../services/types';
 
 // Export Quotations API
 export { default as QuotationsAPI } from './quotations';
@@ -81,6 +68,9 @@ export type {
   StockStats,
 } from './stock';
 
+// Export Catalog API
+export { CatalogAPI } from './catalog';
+
 // Export Files API
 export { default as FilesAPI } from './files';
 export type {
@@ -100,9 +90,9 @@ export type {
  */
 export const API_CONFIG = {
   // Base URLs for different environments
-  DEVELOPMENT: 'http://localhost:4000/api',
-  STAGING: 'https://staging.car-dealership-backend.com/api',
-  PRODUCTION: 'https://car-dealership-backend.com/api',
+  DEVELOPMENT: 'https://automotive-backend-frqe.onrender.com/api',
+  STAGING: 'https://automotive-backend-frqe.onrender.com/api',
+  PRODUCTION: 'https://automotive-backend-frqe.onrender.com/api',
   
   // Timeout configurations
   DEFAULT_TIMEOUT: 10000, // 10 seconds

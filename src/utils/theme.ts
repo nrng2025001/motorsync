@@ -177,10 +177,19 @@ export const theme: MD3Theme = {
     ...customColors,
   },
   fonts: configureFonts({ config: fontConfig }),
+} as MD3Theme & {
+  colors: MD3Theme['colors'] & {
+    success: string;
+    warning: string;
+    info: string;
+    text: string;
+    textSecondary: string;
+  };
 };
 
 // Export individual colors for use in components
 export const colors = customColors;
+
 
 // Common spacing values used throughout the app
 export const spacing = {

@@ -1,126 +1,65 @@
-import { apiClient, handleApiCall, ApiResponse, PaginatedResponse } from './client';
+import { apiClient } from './client';
+import { 
+  Booking, 
+  BookingFilters, 
+  PaginatedResponse, 
+  ApiResponse,
+  BookingStatus,
+  BulkImportResponse,
+  ImportProgress
+} from '../services/types';
 
-/**
- * Bookings API endpoints
- * 
- * This file contains all booking-related API calls:
- * - CRUD operations for bookings
- * - Status management
- * - Assignment operations
- * - Mobile app advisor endpoints
- * - Bulk import functionality
- */
+class BookingAPI {
+  async getBookings(params?: BookingFilters): Promise<PaginatedResponse<Booking>> {
+    const queryParams = new URLSearchParams();
+    
+    if (params?.page) queryParams.append('page', params.page.toString());
+    if (params?.limit) queryParams.append('limit', params.limit.toString());
+    if (params?.status) queryParams.append('status', params.status);
+    if (params?.timeline) queryParams.append('timeline', params.timeline);
+    if (params?.search) queryParams.append('search', params.search);
+    if (params?.sortBy) queryParams.append('sortBy', params.sortBy);
+    if (params?.sortOrder) queryParams.append('sortOrder', params.sortOrder);
 
-/**
- * Booking status types
- */
-export type BookingStatus = 
-  | 'PENDING' 
-  | 'ASSIGNED' 
-  | 'CONFIRMED' 
-  | 'DELIVERED' 
-  | 'CANCELLED';
+    return apiClient.get(`/bookings?${queryParams.toString()}`);
+  }
 
-/**
- * Booking source types
- */
-export type BookingSource = 'MANUAL' | 'BULK_IMPORT' | 'API' | 'MOBILE';
+  async getBookingById(id: string): Promise<ApiResponse<Booking>> {
+    return apiClient.get(`/bookings/${id}`);
+  }
 
-/**
- * Timeline category types for advisor bookings
- */
-export type TimelineCategory = 'today' | 'delivery_today' | 'pending_update' | 'overdue';
+  async getMyBookings(params?: BookingFilters): Promise<PaginatedResponse<Booking>> {
+    const queryParams = new URLSearchParams();
+    
+    if (params?.page) queryParams.append('page', params.page.toString());
+    if (params?.limit) queryParams.append('limit', params.limit.toString());
+    if (params?.status) queryParams.append('status', params.status);
+    if (params?.timeline) queryParams.append('timeline', params.timeline);
 
-/**
- * Stock availability types
- */
-export type StockAvailability = 'VNA' | 'VEHICLE_AVAILABLE';
+    return apiClient.get(`/bookings/advisor/my-bookings?${queryParams.toString()}`);
+  }
 
-/**
- * Booking interface
- */
-export interface Booking {
-  id: string;
-  optyId: string;
+  async createBooking(data: {
   customerName: string;
-  customerPhone: string;
-  customerEmail: string;
-  variant: string;
-  vcCode: string;
-  color: string;
-  fuelType: string;
-  transmission: string;
-  bookingDate: string;
-  division: string;
-  empName: string;
-  employeeLogin: string;
-  financeRequired: boolean;
+    customerPhone?: string;
+    customerEmail?: string;
+    variant?: string;
+    vcCode?: string;
+    color?: string;
+    fuelType?: string;
+    transmission?: string;
+    dealerCode: string;
+    advisorId?: string;
+    bookingDate?: string;
+    expectedDeliveryDate?: string;
+    financeRequired?: boolean;
   financerName?: string;
-  fileLoginDate: string;
-  approvalDate?: string;
-  stockAvailability: string;
-  status: BookingStatus;
-  expectedDeliveryDate?: string;
-  backOrderStatus?: boolean;
-  rtoDate?: string;
-  
-  // Legacy remarks field (read-only)
   remarks?: string;
-  
-  // Role-specific remarks fields
-  advisorRemarks?: string;
-  teamLeadRemarks?: string;
-  salesManagerRemarks?: string;
-  generalManagerRemarks?: string;
-  adminRemarks?: string;
-  
-  zone: string;
-  region: string;
-  dealerCode: string;
-  dealerName: string;
-  dealerType: string;
-  source: BookingSource;
-  assignedToId?: string;
-  assignedToName?: string;
-  advisorId?: string;
-  createdAt: string;
-  updatedAt: string;
-  enquiryId?: string;
-  quotationId?: string;
-}
+  }): Promise<ApiResponse<Booking>> {
+    return apiClient.post('/bookings', data);
+  }
 
-/**
- * Create booking request interface
- */
-export interface CreateBookingRequest {
-  customerName: string;
-  customerPhone: string;
-  customerEmail: string;
-  variant: string;
-  vcCode: string;
-  color: string;
-  fuelType: string;
-  transmission: string;
-  bookingDate: string;
-  division: string;
-  empName: string;
-  employeeLogin: string;
-  financeRequired: boolean;
-  financerName?: string;
-  expectedDeliveryDate?: string;
-  remarks?: string;
-  zone: string;
-  region: string;
-  dealerCode: string;
-  dealerName: string;
-  enquiryId?: string;
-  quotationId?: string;
-}
-
-/**
- * Update booking request interface
- */
-export interface UpdateBookingRequest {
+  async updateBooking(id: string, data: {
   customerName?: string;
   customerPhone?: string;
   customerEmail?: string;
@@ -129,447 +68,221 @@ export interface UpdateBookingRequest {
   color?: string;
   fuelType?: string;
   transmission?: string;
+    status?: BookingStatus;
+    advisorId?: string;
   bookingDate?: string;
-  division?: string;
-  empName?: string;
-  employeeLogin?: string;
-  financeRequired?: boolean;
-  financerName?: string;
   expectedDeliveryDate?: string;
-  remarks?: string;
-  zone?: string;
-  region?: string;
-  dealerCode?: string;
-  dealerName?: string;
-}
-
-/**
- * Booking filters interface
- */
-export interface BookingFilters {
-  status?: BookingStatus[];
-  source?: BookingSource[];
-  dealerType?: string[];
-  zone?: string[];
-  region?: string[];
-  fuelType?: string[];
-  transmission?: string[];
-  financeRequired?: boolean;
-  assignedTo?: string[];
-  dateFrom?: string;
-  dateTo?: string;
-  search?: string;
-}
-
-/**
- * Booking list parameters interface
- */
-export interface BookingListParams extends BookingFilters {
-  page?: number;
-  limit?: number;
-  sortBy?: 'createdAt' | 'updatedAt' | 'bookingDate' | 'customerName';
-  sortOrder?: 'asc' | 'desc';
-}
-
-/**
- * Assignment request interface
- */
-export interface AssignBookingRequest {
-  assignedToId: string;
-  notes?: string;
-}
-
-/**
- * Advisor booking update request interface
- */
-export interface UpdateBookingRequest {
-  status?: BookingStatus;
-  expectedDeliveryDate?: string; // ISO DateTime
+    stockAvailability?: string;
   financeRequired?: boolean;
   financerName?: string;
-  fileLoginDate?: string; // ISO DateTime
-  approvalDate?: string; // ISO DateTime
-  stockAvailability?: StockAvailability;
-  backOrderStatus?: boolean;
-  rtoDate?: string; // ISO DateTime
   advisorRemarks?: string;
-}
+    teamLeadRemarks?: string;
+    salesManagerRemarks?: string;
+    generalManagerRemarks?: string;
+    adminRemarks?: string;
+  }): Promise<ApiResponse<Booking>> {
+    return apiClient.put(`/bookings/${id}`, data);
+  }
 
-/**
- * Status update request interface
- */
-export interface UpdateBookingStatusRequest {
-  status: BookingStatus;
-  notes?: string;
-}
-
-/**
- * Add remarks request interface
- */
-export interface AddRemarksRequest {
-  remarks: string;
-}
-
-/**
- * Update booking fields request interface (Advisor-editable fields)
- */
-export interface UpdateBookingFieldsRequest {
+  async updateBookingStatus(id: string, data: {
   status?: BookingStatus;
+    expectedDeliveryDate?: string;
   financeRequired?: boolean;
   financerName?: string;
-  fileLoginDate?: string;
-  approvalDate?: string;
-  stockAvailability?: 'VNA' | 'VEHICLE_AVAILABLE';
-  expectedDeliveryDate?: string;
-  backOrderStatus?: boolean;
-  rtoDate?: string;
   advisorRemarks?: string;
-}
-
-/**
- * Booking statistics interface
- */
-export interface BookingStats {
-  total: number;
-  pending: number;
-  assigned: number;
-  inProgress: number;
-  confirmed: number;
-  delivered: number;
-  cancelled: number;
-  noShow: number;
-  waitlisted: number;
-  rescheduled: number;
-  backOrder: number;
-  approved: number;
-  rejected: number;
-  conversionRate: number;
-  avgProcessingTime: number; // in hours
-}
-
-/**
- * Bulk import interfaces
- */
-export interface ImportUploadResponse {
-  importId: string;
-  message: string;
-  fileName: string;
-  fileSize: number;
-  status: 'PENDING' | 'PROCESSING' | 'COMPLETED' | 'FAILED' | 'CANCELLED';
-}
-
-export interface ImportPreviewResponse {
-  totalRows: number;
-  validRows: number;
-  errorRows: number;
-  preview: any[];
-  errors: ImportError[];
-}
-
-export interface ImportError {
-  row: number;
-  field: string;
-  value: any;
-  message: string;
-}
-
-export interface ImportStatus {
-  id: string;
-  fileName: string;
-  status: 'PENDING' | 'PROCESSING' | 'COMPLETED' | 'FAILED' | 'CANCELLED';
-  totalRows: number;
-  processedRows: number;
-  errorRows: number;
-  createdAt: string;
-  completedAt?: string;
-  errors?: ImportError[];
-}
-
-/**
- * Bookings API class
- * Contains all booking-related API methods
- */
-export class BookingsAPI {
-  /**
-   * Get list of bookings with optional filtering and pagination
-   * 
-   * @param params - Query parameters for filtering and pagination
-   * @returns Promise<PaginatedResponse<Booking>>
-   * 
-   * Example usage:
-   * ```typescript
-   * const bookings = await BookingsAPI.getBookings({
-   *   status: ['PENDING', 'ASSIGNED'],
-   *   dealerType: ['TATA', 'MARUTI'],
-   *   page: 1,
-   *   limit: 20,
-   *   sortBy: 'createdAt',
-   *   sortOrder: 'desc'
-   * });
-   * ```
-   */
-  static async getBookings(params?: BookingListParams): Promise<Booking[]> {
-    const response = await handleApiCall(() =>
-      apiClient.get<any>('/bookings', { params })
-    ) as any;
-    return response.bookings || response.data || [];
+    stockAvailability?: string;
+  }): Promise<ApiResponse<Booking>> {
+    return apiClient.put(`/bookings/${id}/update-status`, data);
   }
 
-  /**
-   * Get a specific booking by ID
-   * 
-   * @param id - Booking ID
-   * @returns Promise<Booking>
-   */
-  static async getBooking(id: string): Promise<Booking> {
-    return handleApiCall(() =>
-      apiClient.get<ApiResponse<Booking>>(`/bookings/${id}`)
-    );
+  async deleteBooking(id: string): Promise<ApiResponse<void>> {
+    return apiClient.delete(`/bookings/${id}`);
   }
 
-
-  /**
-   * Update booking (advisor-editable fields only)
-   * 
-   * @param id - Booking ID
-   * @param data - Update data
-   * @returns Promise<Booking>
-   */
-  static async updateBooking(id: string, data: UpdateBookingRequest): Promise<Booking> {
-    return handleApiCall(() =>
-      apiClient.put<ApiResponse<Booking>>(`/bookings/${id}/update-status`, data)
-    );
+  async bulkAssignBookings(bookingIds: string[], advisorId: string): Promise<ApiResponse<{
+    successful: number;
+    failed: number;
+    assignments: Array<{
+      bookingId: string;
+      advisorId: string;
+      advisorName: string;
+      success: boolean;
+      error?: string;
+    }>;
+  }>> {
+    return apiClient.post('/bookings/bulk-assign', { bookingIds, advisorId });
   }
 
-  /**
-   * Create a new booking
-   * 
-   * @param bookingData - Booking creation data
-   * @returns Promise<Booking>
-   * 
-   * Example usage:
-   * ```typescript
-   * const newBooking = await BookingsAPI.createBooking({
-   *   customerName: 'John Doe',
-   *   customerPhone: '+919876543210',
-   *   customerEmail: 'john@example.com',
-   *   variant: 'Harrier XZ Plus',
-   *   vcCode: 'HARRIER_XZ_PLUS',
-   *   color: 'White',
-   *   fuelType: 'PETROL',
-   *   transmission: 'AUTOMATIC',
-   *   bookingDate: '2024-01-15',
-   *   division: 'Passenger Vehicles',
-   *   empName: 'Sales Advisor',
-   *   employeeLogin: 'advisor001',
-   *   financeRequired: true,
-   *   zone: 'North',
-   *   region: 'North-1',
-   *   dealerCode: 'TATA001',
-   *   dealerName: 'Tata Motors North'
-   * });
-   * ```
-   */
-  static async createBooking(bookingData: CreateBookingRequest): Promise<Booking> {
-    return handleApiCall(() =>
-      apiClient.post<ApiResponse<Booking>>('/bookings', bookingData)
-    );
+  async autoAssignBookings(bookingIds: string[], strategy: 'ROUND_ROBIN' | 'LEAST_LOAD' | 'RANDOM'): Promise<ApiResponse<{
+    successful: number;
+    failed: number;
+    assignments: Array<{
+      bookingId: string;
+      advisorId: string;
+      advisorName: string;
+    }>;
+  }>> {
+    return apiClient.post('/bookings/auto-assign', { bookingIds, strategy });
   }
 
-
-  /**
-   * Delete a booking (Admin only)
-   * 
-   * @param id - Booking ID
-   * @returns Promise<void>
-   */
-  static async deleteBooking(id: string): Promise<void> {
-    return handleApiCall(() =>
-      apiClient.delete<ApiResponse<void>>(`/bookings/${id}`)
-    );
+  async unassignBooking(bookingId: string): Promise<ApiResponse<Booking>> {
+    return apiClient.patch(`/bookings/${bookingId}/unassign`, {});
   }
 
-  /**
-   * Assign a booking to an advisor (Manager+)
-   * 
-   * @param id - Booking ID
-   * @param assignmentData - Assignment data
-   * @returns Promise<Booking>
-   */
-  static async assignBooking(id: string, assignmentData: AssignBookingRequest): Promise<Booking> {
-    return handleApiCall(() =>
-      apiClient.patch<ApiResponse<Booking>>(`/bookings/${id}/assign`, assignmentData)
-    );
-  }
-
-  /**
-   * Get booking audit history (Manager+)
-   * 
-   * @param id - Booking ID
-   * @returns Promise<any[]>
-   */
-  static async getBookingAudit(id: string): Promise<any[]> {
-    return handleApiCall(() =>
-      apiClient.get<ApiResponse<any[]>>(`/bookings/${id}/audit`)
-    );
-  }
-
-  /**
-   * Get advisor's assigned bookings (Mobile app)
-   * 
-   * @param params - Query parameters
-   * @returns Promise<PaginatedResponse<Booking>>
-   */
-  static async getMyBookings(params?: BookingListParams): Promise<Booking[]> {
-    const response = await handleApiCall(() =>
-      apiClient.get<any>('/bookings/advisor/my-bookings', { params })
-    ) as any;
-    return response.bookings || response.data || [];
-  }
-
-  /**
-   * Update booking status (Advisor - own bookings only)
-   * 
-   * @param id - Booking ID
-   * @param statusData - Status update data
-   * @returns Promise<Booking>
-   */
-  static async updateBookingStatus(id: string, statusData: UpdateBookingStatusRequest): Promise<Booking> {
-    return handleApiCall(() =>
-      apiClient.patch<ApiResponse<Booking>>(`/bookings/${id}/status`, statusData)
-    );
-  }
-
-  /**
-   * Add remarks to booking (Advisor - own bookings only)
-   * 
-   * @param id - Booking ID
-   * @param remarksData - Remarks data
-   * @returns Promise<Booking>
-   */
-  static async addRemarks(id: string, remarksData: AddRemarksRequest): Promise<Booking> {
-    return handleApiCall(() =>
-      apiClient.post<ApiResponse<Booking>>(`/bookings/${id}/remarks`, remarksData)
-    );
-  }
-
-  /**
-   * Update booking fields (Advisor-editable fields only)
-   * Uses the new /update-status endpoint that supports multiple field updates
-   * 
-   * @param id - Booking ID
-   * @param fieldsData - Fields to update
-   * @returns Promise<Booking>
-   */
-  static async updateBookingFields(id: string, fieldsData: UpdateBookingFieldsRequest): Promise<any> {
-    return handleApiCall(() =>
-      apiClient.put<ApiResponse<any>>(`/bookings/${id}/update-status`, fieldsData)
-    );
-  }
-
-  /**
-   * Get booking statistics
-   * 
-   * @param filters - Optional filters for statistics
-   * @returns Promise<BookingStats>
-   */
-  static async getStats(filters?: BookingFilters): Promise<BookingStats> {
-    return handleApiCall(() =>
-      apiClient.get<ApiResponse<BookingStats>>('/bookings/stats', { params: filters })
-    );
-  }
-
-  /**
-   * Search bookings
-   * 
-   * @param query - Search query
-   * @param filters - Optional additional filters
-   * @returns Promise<Booking[]>
-   */
-  static async searchBookings(query: string, filters?: BookingFilters): Promise<Booking[]> {
-    return handleApiCall(() =>
-      apiClient.get<ApiResponse<Booking[]>>('/bookings/search', {
-        params: { q: query, ...filters }
-      })
-    );
-  }
-
-  // Bulk Import Methods
-
-  /**
-   * Upload Excel/CSV file for bulk import (Admin/Manager)
-   * 
-   * @param file - File to upload
-   * @returns Promise<ImportUploadResponse>
-   */
-  static async uploadImportFile(file: File): Promise<ImportUploadResponse> {
+  async uploadBulkBookings(file: any): Promise<BulkImportResponse> {
     const formData = new FormData();
     formData.append('file', file);
     
-    return handleApiCall(() =>
-      apiClient.post<ApiResponse<ImportUploadResponse>>('/bookings/import/upload', formData, {
-        headers: {
-          'Content-Type': 'multipart/form-data',
-        },
-      })
-    );
+    return apiClient.post('/bookings/import', formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data',
+      },
+    });
   }
 
-  /**
-   * Preview import data (Admin/Manager)
-   * 
-   * @param file - File to preview
-   * @returns Promise<ImportPreviewResponse>
-   */
-  static async previewImportFile(file: File): Promise<ImportPreviewResponse> {
-    const formData = new FormData();
-    formData.append('file', file);
+  async getImportProgress(importId: string): Promise<ApiResponse<ImportProgress>> {
+    return apiClient.get(`/bookings/imports/${importId}/progress`);
+  }
+
+  async getImportHistory(params?: {
+    page?: number;
+    limit?: number;
+  }): Promise<PaginatedResponse<ImportProgress>> {
+    const queryParams = new URLSearchParams();
+    if (params?.page) queryParams.append('page', params.page.toString());
+    if (params?.limit) queryParams.append('limit', params.limit.toString());
+
+    return apiClient.get(`/bookings/imports?${queryParams.toString()}`);
+  }
+
+  // Additional comprehensive methods from technical guide
+
+  // Advanced search and filtering
+  async searchBookings(query: string, filters?: {
+    status?: BookingStatus;
+    dateFrom?: string;
+    dateTo?: string;
+    advisorId?: string;
+    variant?: string;
+    color?: string;
+  }): Promise<PaginatedResponse<Booking>> {
+    const params = new URLSearchParams();
+    params.append('search', query);
     
-    return handleApiCall(() =>
-      apiClient.post<ApiResponse<ImportPreviewResponse>>('/bookings/import/preview', formData, {
-        headers: {
-          'Content-Type': 'multipart/form-data',
-        },
-      })
-    );
+    if (filters?.status) params.append('status', filters.status);
+    if (filters?.dateFrom) params.append('dateFrom', filters.dateFrom);
+    if (filters?.dateTo) params.append('dateTo', filters.dateTo);
+    if (filters?.advisorId) params.append('advisorId', filters.advisorId);
+    if (filters?.variant) params.append('variant', filters.variant);
+    if (filters?.color) params.append('color', filters.color);
+
+    return apiClient.get(`/bookings/search?${params.toString()}`);
   }
 
-  /**
-   * Get import history (Admin/Manager)
-   * 
-   * @returns Promise<ImportStatus[]>
-   */
-  static async getImports(): Promise<ImportStatus[]> {
-    return handleApiCall(() =>
-      apiClient.get<ApiResponse<ImportStatus[]>>('/bookings/imports')
-    );
+  // Analytics and reporting
+  async getBookingAnalytics(filters?: {
+    dateFrom?: string;
+    dateTo?: string;
+    groupBy?: 'day' | 'week' | 'month';
+    advisorId?: string;
+  }): Promise<ApiResponse<{
+    total: number;
+    byStatus: Record<string, number>;
+    byAdvisor: Record<string, number>;
+    byVariant: Record<string, number>;
+    revenue: {
+      total: number;
+      byMonth: Array<{ month: string; amount: number }>;
+    };
+    trends: Array<{ date: string; count: number }>;
+  }>> {
+    const params = new URLSearchParams();
+    if (filters?.dateFrom) params.append('dateFrom', filters.dateFrom);
+    if (filters?.dateTo) params.append('dateTo', filters.dateTo);
+    if (filters?.groupBy) params.append('groupBy', filters.groupBy);
+    if (filters?.advisorId) params.append('advisorId', filters.advisorId);
+
+    return apiClient.get(`/bookings/analytics?${params.toString()}`);
   }
 
-  /**
-   * Get specific import details (Admin/Manager)
-   * 
-   * @param id - Import ID
-   * @returns Promise<ImportStatus>
-   */
-  static async getImportDetails(id: string): Promise<ImportStatus> {
-    return handleApiCall(() =>
-      apiClient.get<ApiResponse<ImportStatus>>(`/bookings/imports/${id}`)
-    );
+  // Dashboard statistics
+  async getDashboardStats(): Promise<ApiResponse<{
+    totalBookings: number;
+    totalEnquiries: number;
+    totalQuotations: number;
+    enquiryStats: {
+      byCategory: Record<string, number>;
+      byStatus: Record<string, number>;
+    };
+    quotationStats: {
+      byStatus: Record<string, number>;
+    };
+    recentActivities: Array<{
+      type: 'booking' | 'enquiry' | 'quotation';
+      id: string;
+      customerName: string;
+      variant: string;
+      status: string;
+      createdAt: string;
+    }>;
+  }>> {
+    return apiClient.get('/dashboard/stats');
   }
 
-  /**
-   * Download import errors CSV (Admin/Manager)
-   * 
-   * @param id - Import ID
-   * @returns Promise<Blob>
-   */
-  static async downloadImportErrors(id: string): Promise<Blob> {
-    return handleApiCall(() =>
-      apiClient.get(`/bookings/imports/${id}/errors`, {
-        responseType: 'blob'
-      })
-    );
+  // Export functionality
+  async exportBookings(filters?: {
+    status?: BookingStatus;
+    dateFrom?: string;
+    dateTo?: string;
+    advisorId?: string;
+    format?: 'excel' | 'csv';
+  }): Promise<Blob> {
+    const params = new URLSearchParams();
+    
+    if (filters?.status) params.append('status', filters.status);
+    if (filters?.dateFrom) params.append('dateFrom', filters.dateFrom);
+    if (filters?.dateTo) params.append('dateTo', filters.dateTo);
+    if (filters?.advisorId) params.append('advisorId', filters.advisorId);
+    if (filters?.format) params.append('format', filters.format);
+
+    const response = await apiClient.get(`/bookings/export?${params.toString()}`, {
+      responseType: 'blob'
+    });
+    
+    return response.data;
+  }
+
+  // Bulk operations
+  async bulkUpdateStatus(bookingIds: string[], status: BookingStatus): Promise<ApiResponse<{
+    updated: number;
+    failed: number;
+    results: Array<{
+      bookingId: string;
+      status: 'updated' | 'failed';
+      error?: string;
+    }>;
+  }>> {
+    return apiClient.post('/bookings/bulk-update-status', { bookingIds, status });
+  }
+
+  async bulkUpdateRemarks(bookingIds: string[], remarks: {
+    advisorRemarks?: string;
+    teamLeadRemarks?: string;
+    salesManagerRemarks?: string;
+    generalManagerRemarks?: string;
+    adminRemarks?: string;
+  }): Promise<ApiResponse<{
+    updated: number;
+    failed: number;
+    results: Array<{
+      bookingId: string;
+      status: 'updated' | 'failed';
+      error?: string;
+    }>;
+  }>> {
+    return apiClient.post('/bookings/bulk-update-remarks', { bookingIds, remarks });
   }
 }
 
-export default BookingsAPI;
+export const bookingAPI = new BookingAPI();
+export default bookingAPI;

@@ -34,11 +34,11 @@ export function TeamScreen({ navigation }: any): React.JSX.Element {
   const [refreshing, setRefreshing] = useState(false);
 
   const currentUser = state.user;
-  const canManage = canManageTeam(currentUser?.role || 'CUSTOMER_ADVISOR');
+  const canManage = canManageTeam(currentUser?.role?.name || 'CUSTOMER_ADVISOR');
 
   // Get team data
-  const teamHierarchy = currentUser ? getTeamHierarchy(currentUser.id) : null;
-  const directReports = currentUser ? getDirectReports(currentUser.id) : [];
+  const teamHierarchy = currentUser ? getTeamHierarchy(currentUser.firebaseUid) : null;
+  const directReports = currentUser ? getDirectReports(currentUser.firebaseUid) : [];
 
   /**
    * Handle pull to refresh
@@ -117,7 +117,7 @@ export function TeamScreen({ navigation }: any): React.JSX.Element {
             My Team
           </Text>
           <Text variant="bodyMedium" style={styles.headerSubtitle}>
-            {getRoleDisplayName(currentUser?.role || 'CUSTOMER_ADVISOR')}
+            {getRoleDisplayName(currentUser?.role?.name || 'CUSTOMER_ADVISOR')}
           </Text>
         </View>
 

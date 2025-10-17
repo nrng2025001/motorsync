@@ -56,7 +56,7 @@ export interface TestConfig {
  * Default test configuration
  */
 const DEFAULT_CONFIG: TestConfig = {
-  baseUrl: 'http://localhost:4000/api',
+  baseUrl: 'https://automotive-backend-frqe.onrender.com/api',
   timeout: 10000,
   verbose: true,
 };

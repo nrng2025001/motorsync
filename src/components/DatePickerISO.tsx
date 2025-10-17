@@ -17,6 +17,7 @@ interface DatePickerISOProps {
   maximumDate?: Date;
   error?: string;
   disabled?: boolean;
+  style?: any; // Add style prop for compatibility
 }
 
 export function DatePickerISO({
@@ -27,6 +28,7 @@ export function DatePickerISO({
   maximumDate,
   error,
   disabled = false,
+  style,
 }: DatePickerISOProps): React.JSX.Element {
   const [showPicker, setShowPicker] = useState(false);
   const [selectedDate, setSelectedDate] = useState<Date>(
@@ -84,7 +86,7 @@ export function DatePickerISO({
   const dateOptions = generateDateOptions();
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, style]}>
       <TouchableOpacity onPress={handlePress} disabled={disabled}>
         <TextInput
           label={label}

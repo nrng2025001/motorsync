@@ -6,7 +6,7 @@
 import { getAuth } from 'firebase/auth';
 import { ApiResponse } from './types';
 
-export const API_URL = 'http://10.69.245.247:4000/api';
+export const API_URL = 'https://automotive-backend-frqe.onrender.com/api';
 
 /**
  * Get Firebase ID Token for authentication

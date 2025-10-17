@@ -3,7 +3,7 @@
  * Handles all quotation-related API operations
  */
 
-import { apiRequest, buildQueryString } from './api.config';
+import { apiClient, handleApiCall } from '../api/client';
 import {
   CreateQuotationRequest,
   UpdateQuotationRequest,
@@ -24,9 +24,8 @@ export async function getQuotations(
     limit,
   };
   
-  const queryString = buildQueryString(params);
-  const response = await apiRequest<PaginatedQuotationsResponse['data']>(
-    `/quotations${queryString}`
+  const response = await handleApiCall(() =>
+    apiClient.get<PaginatedQuotationsResponse['data']>('/quotations', { params })
   );
   
   return response;
@@ -36,7 +35,9 @@ export async function getQuotations(
  * Get single quotation by ID
  */
 export async function getQuotationById(id: string): Promise<Quotation> {
-  const response = await apiRequest<{ quotation: Quotation }>(`/quotations/${id}`);
+  const response = await handleApiCall(() =>
+    apiClient.get<{ quotation: Quotation }>(`/quotations/${id}`)
+  );
   return response.quotation;
 }
 
@@ -46,10 +47,9 @@ export async function getQuotationById(id: string): Promise<Quotation> {
 export async function createQuotation(
   data: CreateQuotationRequest
 ): Promise<Quotation> {
-  const response = await apiRequest<{ quotation: Quotation }>('/quotations', {
-    method: 'POST',
-    body: JSON.stringify(data),
-  });
+  const response = await handleApiCall(() =>
+    apiClient.post<{ quotation: Quotation }>('/quotations', data)
+  );
   
   return response.quotation;
 }
@@ -61,10 +61,9 @@ export async function updateQuotation(
   id: string,
   data: UpdateQuotationRequest
 ): Promise<Quotation> {
-  const response = await apiRequest<{ quotation: Quotation }>(`/quotations/${id}`, {
-    method: 'PUT',
-    body: JSON.stringify(data),
-  });
+  const response = await handleApiCall(() =>
+    apiClient.put<{ quotation: Quotation }>(`/quotations/${id}`, data)
+  );
   
   return response.quotation;
 }

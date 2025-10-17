@@ -53,8 +53,8 @@ export function getConfig(): AppConfig {
   }
 
   const config: AppConfig = {
-    apiUrl: process.env.EXPO_PUBLIC_API_URL || 'http://10.69.245.247:4000/api',
-    backendUrl: process.env.EXPO_PUBLIC_BACKEND_URL || 'http://10.69.245.247:4000',
+    apiUrl: process.env.EXPO_PUBLIC_API_URL || 'https://automotive-backend-frqe.onrender.com/api',
+    backendUrl: process.env.EXPO_PUBLIC_BACKEND_URL || 'https://automotive-backend-frqe.onrender.com',
     environment: (process.env.EXPO_PUBLIC_APP_ENV as any) || 'development',
     debugMode: process.env.EXPO_PUBLIC_DEBUG_MODE === 'true' || __DEV__,
     firebase: {

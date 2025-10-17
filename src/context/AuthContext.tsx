@@ -3,6 +3,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { AuthAPI } from '../api/auth';
 import { AuthService } from '../services/authService';
 import { User as FirebaseUser } from 'firebase/auth';
+import { Dealership } from '../types/dealership';
 
 /**
  * User roles in the automotive CRM system
@@ -17,12 +18,40 @@ export type UserRole =
 
 /**
  * User interface representing authenticated user data
+ * Updated to match backend response structure
  */
 export interface User {
-  id: string;
-  name: string;
+  firebaseUid: string;
   email: string;
-  role: UserRole;
+  name: string;
+  role: {
+    id: string;
+    name: UserRole;
+  };
+  dealershipId: string | null;
+  dealership: {
+    id: string;
+    name: string;
+    code: string;
+    type: string;
+    email: string;
+    phone: string;
+    address: string;
+    city: string;
+    state: string;
+    pincode: string;
+    gstNumber?: string | null;
+    panNumber?: string | null;
+    brands: string[];
+    isActive: boolean;
+    onboardingCompleted: boolean;
+    createdAt: string;
+    updatedAt: string;
+  } | null;
+  employeeId: string | null;
+  isActive: boolean;
+  // Legacy fields for backward compatibility
+  id?: string;
   avatar?: string;
   department?: string;
 }
@@ -58,6 +87,9 @@ interface AuthContextType {
   signup: (email: string, password: string, name: string) => Promise<void>;
   logout: () => Promise<void>;
   clearError: () => void;
+  refreshProfile: () => Promise<void>;
+  dealership?: Dealership;
+  isAdmin: boolean;
 }
 
 // Initial state
@@ -109,6 +141,63 @@ function authReducer(state: AuthState, action: AuthAction): AuthState {
 // Create context
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
+/**
+ * Transform user profile to ensure it has the correct structure
+ */
+function transformUserProfile(userProfile: any): User {
+  if (!userProfile || typeof userProfile !== 'object') {
+    throw new Error('Invalid user profile: not an object');
+  }
+  
+  // Handle nested user object structure from API response
+  let actualUserProfile = userProfile;
+  if (userProfile.user && typeof userProfile.user === 'object') {
+    actualUserProfile = userProfile.user;
+  }
+  
+  let transformedProfile = { ...actualUserProfile };
+  
+  // Handle different possible response structures
+  if (typeof actualUserProfile.role === 'string') {
+    console.log('🔄 Converting role string to object structure');
+    transformedProfile.role = {
+      id: 'unknown',
+      name: actualUserProfile.role
+    };
+  }
+  // Check if role is missing entirely
+  else if (!actualUserProfile.role) {
+    console.log('🔄 Adding default role structure');
+    transformedProfile.role = {
+      id: 'unknown',
+      name: 'CUSTOMER_ADVISOR'
+    };
+  }
+  
+  // Ensure we have the required fields
+  if (!transformedProfile.firebaseUid && actualUserProfile.id) {
+    transformedProfile.firebaseUid = actualUserProfile.id;
+  }
+  
+  // Ensure employeeId and dealership are properly extracted
+  if (actualUserProfile.employeeId) {
+    transformedProfile.employeeId = actualUserProfile.employeeId;
+  }
+  if (actualUserProfile.dealership) {
+    transformedProfile.dealership = actualUserProfile.dealership;
+  }
+  
+  // Final validation
+  if (!transformedProfile.role || !transformedProfile.role.name) {
+    console.error('❌ Invalid user profile structure from backend');
+    console.error('   Expected: { role: { name: string } }');
+    console.error('   Received:', JSON.stringify(userProfile, null, 2));
+    throw new Error('Invalid user profile structure from backend');
+  }
+  
+  return transformedProfile as User;
+}
+
 
 /**
  * Auth Provider component that manages authentication state
@@ -128,25 +217,63 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     try {
       dispatch({ type: 'LOADING', payload: true });
       
+      // First, try to restore user profile from AsyncStorage
+      try {
+        const storedProfile = await AsyncStorage.getItem('userProfile');
+        if (storedProfile) {
+          const parsedProfile = JSON.parse(storedProfile);
+          console.log('🔄 Restored user profile from AsyncStorage:', parsedProfile);
+          dispatch({ type: 'LOGIN_SUCCESS', payload: parsedProfile });
+        }
+      } catch (storageError) {
+        console.warn('⚠️ Failed to restore user profile from AsyncStorage:', storageError);
+      }
+      
       // Listen to Firebase auth state changes
       const unsubscribe = AuthService.onAuthStateChanged(async (firebaseUser: FirebaseUser | null) => {
         if (firebaseUser) {
           try {
+            console.log('🔄 Firebase user detected, fetching profile from backend...');
+            console.log('   Firebase UID:', firebaseUser.uid);
+            console.log('   Email:', firebaseUser.email);
+            
             // Get user profile from backend
             const userProfile = await AuthAPI.getProfile();
-            dispatch({ type: 'LOGIN_SUCCESS', payload: userProfile });
+            
+            console.log('✅ Backend profile retrieved successfully');
+            console.log('   Full response:', JSON.stringify(userProfile, null, 2));
+            
+            // Check the actual structure
+            const actualUser = userProfile.user || userProfile;
+            console.log('   Role:', actualUser.role?.name);
+            console.log('   Dealership:', actualUser.dealership?.name);
+            console.log('   Employee ID:', actualUser.employeeId);
+            
+            // Transform user profile to ensure correct structure
+            const transformedProfile = transformUserProfile(userProfile);
+            
+            // Store user data in AsyncStorage for persistence
+            try {
+              await AsyncStorage.setItem('userProfile', JSON.stringify(transformedProfile));
+              console.log('✅ User profile stored in AsyncStorage');
+            } catch (storageError) {
+              console.warn('⚠️ Failed to store user profile in AsyncStorage:', storageError);
+            }
+            
+            dispatch({ type: 'LOGIN_SUCCESS', payload: transformedProfile });
           } catch (error) {
-            console.error('Error getting user profile:', error);
-            // If backend call fails, create user from Firebase data
-            const user: User = {
-              id: firebaseUser.uid,
-              name: firebaseUser.displayName || 'User',
-              email: firebaseUser.email || '',
-              role: 'CUSTOMER_ADVISOR', // Default role
-            };
-            dispatch({ type: 'LOGIN_SUCCESS', payload: user });
+            console.error('❌ Error getting user profile from backend:', error);
+            console.error('   This means the user is not properly set up in the backend database');
+            console.error('   User must be created in the backend first');
+            
+            // Don't create fallback user - this should fail
+            dispatch({ 
+              type: 'LOGIN_FAILURE', 
+              payload: 'User not found in system. Please contact your administrator.' 
+            });
           }
         } else {
+          console.log('🔄 No Firebase user, clearing auth state');
           dispatch({ type: 'LOADING', payload: false });
         }
       });
@@ -166,46 +293,32 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     try {
       dispatch({ type: 'LOADING', payload: true });
       
-      if (__DEV__) {
-        console.log('🔐 Login attempt:', email.trim().toLowerCase());
-      }
+      console.log('🔐 Login attempt:', email.trim().toLowerCase());
       
       // Sign in with Firebase
       const userCredential = await AuthService.signIn(email.trim().toLowerCase(), password);
       
-      if (__DEV__) {
-        console.log('✅ Firebase login successful');
-        console.log('User UID:', userCredential.user.uid);
-        console.log('Email:', userCredential.user.email);
-      }
+      console.log('✅ Firebase login successful');
+      console.log('   User UID:', userCredential.user.uid);
+      console.log('   Email:', userCredential.user.email);
       
       // Get user profile from backend
-      try {
-        const userProfile = await AuthAPI.getProfile();
-        
-        if (__DEV__) {
-          console.log('✅ Backend profile retrieved');
-          console.log('User:', userProfile.name);
-          console.log('Role:', userProfile.role);
-        }
-        
-        dispatch({ type: 'LOGIN_SUCCESS', payload: userProfile });
-      } catch (error) {
-        if (__DEV__) {
-          console.warn('⚠️  Backend profile fetch failed, using Firebase data');
-          console.error('Error:', error);
-        }
-        
-        // If backend call fails, create user from Firebase data
-        const user: User = {
-          id: userCredential.user.uid,
-          name: userCredential.user.displayName || 'User',
-          email: userCredential.user.email || '',
-          role: 'CUSTOMER_ADVISOR', // Default role
-        };
-        dispatch({ type: 'LOGIN_SUCCESS', payload: user });
-      }
+      console.log('🔄 Fetching profile from backend...');
+      const userProfile = await AuthAPI.getProfile();
+      
+      console.log('✅ Backend profile retrieved successfully');
+      console.log('   Full response:', JSON.stringify(userProfile, null, 2));
+      console.log('   User:', userProfile.name);
+      console.log('   Role:', userProfile.role?.name);
+      console.log('   Dealership:', userProfile.dealership?.name);
+      console.log('   Employee ID:', userProfile.employeeId);
+      
+      // Transform user profile to ensure correct structure
+      const transformedProfile = transformUserProfile(userProfile);
+      
+      dispatch({ type: 'LOGIN_SUCCESS', payload: transformedProfile });
     } catch (error) {
+      console.error('❌ Login failed:', error);
       dispatch({ 
         type: 'LOGIN_FAILURE', 
         payload: error instanceof Error ? error.message : 'Login failed' 
@@ -220,24 +333,31 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     try {
       dispatch({ type: 'LOADING', payload: true });
       
+      console.log('🔐 Signup attempt:', email.trim().toLowerCase());
+      
       // Create user with Firebase
       const userCredential = await AuthService.signUp(email, password, name);
       
+      console.log('✅ Firebase signup successful');
+      console.log('   User UID:', userCredential.user.uid);
+      console.log('   Email:', userCredential.user.email);
+      
       // Get user profile from backend
-      try {
-        const userProfile = await AuthAPI.getProfile();
-        dispatch({ type: 'SIGNUP_SUCCESS', payload: userProfile });
-      } catch (error) {
-        // If backend call fails, create user from Firebase data
-        const user: User = {
-          id: userCredential.user.uid,
-          name: userCredential.user.displayName || name,
-          email: userCredential.user.email || email,
-          role: 'CUSTOMER_ADVISOR', // Default role
-        };
-        dispatch({ type: 'SIGNUP_SUCCESS', payload: user });
-      }
+      console.log('🔄 Fetching profile from backend...');
+      const userProfile = await AuthAPI.getProfile();
+      
+      console.log('✅ Backend profile retrieved successfully');
+      console.log('   Full response:', JSON.stringify(userProfile, null, 2));
+      console.log('   User:', userProfile.name);
+      console.log('   Role:', userProfile.role?.name);
+      console.log('   Dealership:', userProfile.dealership?.name);
+      
+      // Transform user profile to ensure correct structure
+      const transformedProfile = transformUserProfile(userProfile);
+      
+      dispatch({ type: 'SIGNUP_SUCCESS', payload: transformedProfile });
     } catch (error) {
+      console.error('❌ Signup failed:', error);
       dispatch({ 
         type: 'SIGNUP_FAILURE', 
         payload: error instanceof Error ? error.message : 'Sign up failed' 
@@ -250,13 +370,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
    */
   const logout = async () => {
     try {
+      console.log('🔄 Logging out...');
+      
       // Sign out from Firebase
       await AuthService.signOut();
+      
+      // Clear all cached data
+      await AsyncStorage.clear();
+      
+      console.log('✅ Logged out and cleared cache');
       
       dispatch({ type: 'LOGOUT' });
     } catch (error) {
       console.error('Error logging out:', error);
       // Even if Firebase call fails, clear local state
+      await AsyncStorage.clear();
       dispatch({ type: 'LOGOUT' });
     }
   };
@@ -269,12 +397,47 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     dispatch({ type: 'CLEAR_ERROR' });
   };
 
+  /**
+   * Refresh user profile from backend
+   */
+  const refreshProfile = async () => {
+    try {
+      console.log('🔄 Refreshing profile from backend...');
+      
+      const userProfile = await AuthAPI.getProfile();
+      
+      console.log('✅ Profile refreshed successfully');
+      console.log('   Full response:', JSON.stringify(userProfile, null, 2));
+      console.log('   Role:', userProfile.role?.name);
+      console.log('   Dealership:', userProfile.dealership?.name);
+      console.log('   Employee ID:', userProfile.employeeId);
+      
+      // Transform user profile to ensure correct structure
+      const transformedProfile = transformUserProfile(userProfile);
+      
+      dispatch({ type: 'LOGIN_SUCCESS', payload: transformedProfile });
+      
+      // Update cache
+      await AsyncStorage.setItem('user', JSON.stringify(transformedProfile));
+      
+    } catch (error) {
+      console.error('❌ Failed to refresh profile:', error);
+      dispatch({ 
+        type: 'LOGIN_FAILURE', 
+        payload: 'Failed to refresh profile. Please try logging in again.' 
+      });
+    }
+  };
+
   const contextValue: AuthContextType = {
     state,
     login,
     signup,
     logout,
     clearError,
+    refreshProfile,
+    dealership: state.user?.dealership,
+    isAdmin: state.user?.role?.name === 'ADMIN' || state.user?.role?.name === 'GENERAL_MANAGER',
   };
 
   return (
@@ -307,6 +470,13 @@ export function getRoleDisplayName(role: UserRole): string {
     CUSTOMER_ADVISOR: 'Customer Advisor',
   };
   return roleNames[role];
+}
+
+/**
+ * Helper function to get role display name from user object
+ */
+export function getUserRoleDisplayName(user: User): string {
+  return getRoleDisplayName(user.role.name);
 }
 
 /**

@@ -60,22 +60,22 @@ export function BackendTestScreen(): React.JSX.Element {
 
       // Test 2: Create Test User
       await runTest('Create Test User', async () => {
-        return AuthAPI.createTestUser('CUSTOMER_ADVISOR', 'test-advisor@crm.com', 'Test Advisor');
+        return AuthAPI.createUser('CUSTOMER_ADVISOR', 'test-advisor@crm.com', 'Test Advisor');
       });
 
       // Test 3: Enquiries Stats
       await runTest('Get Enquiries Stats', async () => {
-        return EnquiriesAPI.getEnquiriesStats();
+        return EnquiriesAPI.getStats();
       });
 
       // Test 4: List Enquiries
       await runTest('List Enquiries', async () => {
-        return EnquiriesAPI.getEnquiries({ status: 'NEW', page: 1, limit: 10 });
+        return EnquiriesAPI.getEnquiries({ status: ['OPEN'], page: 1, limit: 10 });
       });
 
       // Test 5: Bookings Stats
       await runTest('Get Bookings Stats', async () => {
-        return BookingsAPI.getBookingsStats();
+        return BookingsAPI.getStats();
       });
 
       // Test 6: List Bookings
@@ -85,7 +85,7 @@ export function BackendTestScreen(): React.JSX.Element {
 
       // Test 7: Quotations Stats
       await runTest('Get Quotations Stats', async () => {
-        return QuotationsAPI.getQuotationStats();
+        return QuotationsAPI.getStats();
       });
 
       // Test 8: List Stock

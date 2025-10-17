@@ -14,7 +14,15 @@ import { apiClient, handleApiCall, ApiResponse, PaginatedResponse } from './clie
 /**
  * Quotation status types
  */
-export type QuotationStatus = 'PENDING' | 'SENT' | 'ACCEPTED' | 'REJECTED';
+export type QuotationStatus = 
+  | 'PENDING' 
+  | 'SENT' 
+  | 'ACCEPTED' 
+  | 'REJECTED'
+  | 'DRAFT'
+  | 'VIEWED'
+  | 'APPROVED'
+  | 'EXPIRED';
 
 /**
  * Quotation item interface
@@ -185,7 +193,7 @@ export class QuotationsAPI {
     const response = await handleApiCall(() =>
       apiClient.get<any>('/quotations', { params })
     );
-    return response.quotations || response.data || [];
+    return (response as any).quotations || (response as any).data || [];
   }
 
   /**
@@ -356,7 +364,7 @@ export class QuotationsAPI {
     const response = await handleApiCall(() =>
       apiClient.get<any>('/quotations/my', { params })
     );
-    return response.quotations || response.data || [];
+    return (response as any).quotations || (response as any).data || [];
   }
 
   /**

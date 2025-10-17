@@ -45,6 +45,16 @@ apiClient.interceptors.request.use(
       if (user) {
         const token = await user.getIdToken();
         config.headers.Authorization = `Bearer ${token}`;
+        
+        // Debug logging for token
+        if (__DEV__) {
+          console.log('🔑 Firebase token obtained:', token ? 'YES' : 'NO');
+          console.log('🔑 Token length:', token ? token.length : 0);
+        }
+      } else {
+        if (__DEV__) {
+          console.warn('⚠️ No Firebase user found for API request');
+        }
       }
       
       // Log the request in development only
@@ -81,6 +91,13 @@ apiClient.interceptors.response.use(
     // Log successful responses in development only
     if (__DEV__) {
       console.log(`✅ API Response: ${response.status} ${response.config.url}`);
+      if (response.data) {
+        console.log('📄 Response data structure:', {
+          success: response.data.success,
+          hasData: !!response.data.data,
+          dataKeys: response.data.data ? Object.keys(response.data.data) : 'none'
+        });
+      }
     }
     
     return response;
@@ -92,6 +109,8 @@ apiClient.interceptors.response.use(
     if (__DEV__) {
       console.error(`❌ API Error: ${error.response?.status} ${error.config?.url}`);
       console.error('Error details:', error.response?.data);
+      console.error('Request data that failed:', error.config?.data);
+      console.error('Full error object:', error);
     }
     
     // Handle 401 Unauthorized - token expired or invalid

@@ -103,7 +103,7 @@ export function ProfileScreen(): React.JSX.Element {
             {user.name}
           </Text>
           <Text variant="titleMedium" style={styles.userRole}>
-            {getRoleDisplayName(user.role)}
+            {getRoleDisplayName(user.role.name)}
           </Text>
           <Text variant="bodyMedium" style={styles.userEmail}>
             {user.email}

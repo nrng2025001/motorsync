@@ -22,17 +22,18 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { theme, spacing } from '../../utils/theme';
 import { useAuth } from '../../context/AuthContext';
-import { BookingsAPI, type Booking, type BookingStatus } from '../../api';
+import { bookingAPI } from '../../api/bookings';
+import { type Booking, BookingStatus } from '../../services/types';
 
 /**
  * Role to remarks field mapping
  */
 const remarksFieldMap: Record<string, keyof Booking> = {
   'CUSTOMER_ADVISOR': 'advisorRemarks',
-  'TEAM_LEAD': 'teamLeadRemarks',
-  'SALES_MANAGER': 'salesManagerRemarks',
-  'GENERAL_MANAGER': 'generalManagerRemarks',
-  'ADMIN': 'adminRemarks',
+  'TEAM_LEAD': 'advisorRemarks',
+  'SALES_MANAGER': 'advisorRemarks',
+  'GENERAL_MANAGER': 'advisorRemarks',
+  'ADMIN': 'advisorRemarks',
 };
 
 /**
@@ -42,7 +43,7 @@ const remarksFieldMap: Record<string, keyof Booking> = {
 export function BookingDetailsScreen({ route, navigation }: any): React.JSX.Element {
   const { bookingId } = route?.params || {};
   const { state: authState } = useAuth();
-  const userRole = authState.user?.role || 'CUSTOMER_ADVISOR';
+  const userRole = authState.user?.role?.name || 'CUSTOMER_ADVISOR';
   
   const [booking, setBooking] = useState<Booking | null>(null);
   const [loading, setLoading] = useState(true);
@@ -73,14 +74,21 @@ export function BookingDetailsScreen({ route, navigation }: any): React.JSX.Elem
 
       try {
         setLoading(true);
-        const response = await BookingsAPI.getBooking(bookingId);
-        console.log('Booking API Response:', response);
+        const response = await bookingAPI.getBookingById(bookingId);
         
-        // Handle different response structures
-        const bookingData = response.data || response.booking || response;
-        console.log('Booking Data:', bookingData);
+        // Handle nested response structure: {data: {data: {booking: {...}}}}
+        const responseData = response.data as any;
+        const bookingData = responseData?.data?.booking || responseData?.booking || responseData;
+        
+        console.log('✅ Booking Data received:', responseData);
+        console.log('✅ Booking ID:', bookingData?.id);
         
         if (!bookingData || !bookingData.id) {
+          console.error('❌ Invalid booking data - missing ID or data:', { 
+            hasData: !!bookingData, 
+            hasId: !!bookingData?.id,
+            data: bookingData 
+          });
           throw new Error('Invalid booking data received');
         }
         
@@ -117,15 +125,17 @@ export function BookingDetailsScreen({ route, navigation }: any): React.JSX.Elem
     
     setUpdating(true);
     try {
-      await BookingsAPI.updateBookingFields(booking.id, {
+      await bookingAPI.updateBooking(booking.id, {
         advisorRemarks: editableRemarks,
       });
       
       Alert.alert('Success', 'Remarks updated successfully');
       
       // Refresh booking data
-      const response = await BookingsAPI.getBooking(booking.id);
-      setBooking(response.data || response.booking || response);
+      const response = await bookingAPI.getBookingById(booking.id);
+      const responseData = response.data as any;
+      const bookingData = responseData?.data?.booking || responseData?.booking || responseData;
+      setBooking(bookingData);
     } catch (err: any) {
       console.error('Error updating remarks:', err);
       Alert.alert('Error', err.message || 'Failed to update remarks');
@@ -144,15 +154,17 @@ export function BookingDetailsScreen({ route, navigation }: any): React.JSX.Elem
     setUpdating(true);
     
     try {
-      await BookingsAPI.updateBookingFields(booking.id, {
+      await bookingAPI.updateBooking(booking.id, {
         status: newStatus,
       });
       
       Alert.alert('Success', `Status updated to ${newStatus}`);
       
       // Refresh booking data
-      const response = await BookingsAPI.getBooking(booking.id);
-      setBooking(response.data || response.booking || response);
+      const response = await bookingAPI.getBookingById(booking.id);
+      const responseData = response.data as any;
+      const bookingData = responseData?.data?.booking || responseData?.booking || responseData;
+      setBooking(bookingData);
     } catch (err: any) {
       console.error('Error updating status:', err);
       Alert.alert('Error', err.message || 'Failed to update status');
@@ -169,14 +181,16 @@ export function BookingDetailsScreen({ route, navigation }: any): React.JSX.Elem
     
     setUpdating(true);
     try {
-      await BookingsAPI.updateBookingFields(booking.id, financeData);
+      await bookingAPI.updateBooking(booking.id, financeData);
       
       Alert.alert('Success', 'Finance details updated successfully');
       setEditingFinance(false);
       
       // Refresh booking data
-      const response = await BookingsAPI.getBooking(booking.id);
-      setBooking(response.data || response.booking || response);
+      const response = await bookingAPI.getBookingById(booking.id);
+      const responseData = response.data as any;
+      const bookingData = responseData?.data?.booking || responseData?.booking || responseData;
+      setBooking(bookingData);
     } catch (err: any) {
       console.error('Error updating finance:', err);
       Alert.alert('Error', err.message || 'Failed to update finance details');
@@ -270,7 +284,11 @@ export function BookingDetailsScreen({ route, navigation }: any): React.JSX.Elem
   }
 
   const statusOptions: BookingStatus[] = [
-    'PENDING', 'IN_PROGRESS', 'CONFIRMED', 'DELIVERED', 'CANCELLED'
+    BookingStatus.PENDING, 
+    BookingStatus.IN_PROGRESS, 
+    BookingStatus.CONFIRMED, 
+    BookingStatus.DELIVERED, 
+    BookingStatus.CANCELLED
   ];
 
   return (
@@ -299,28 +317,32 @@ export function BookingDetailsScreen({ route, navigation }: any): React.JSX.Elem
           >
             {booking.status}
           </Chip>
-          <Menu
-            visible={statusMenuVisible}
-            onDismiss={() => setStatusMenuVisible(false)}
-            anchor={
-              <Button 
-                mode="outlined" 
-                compact 
-                onPress={() => setStatusMenuVisible(true)}
-                disabled={updating}
-              >
-                Change Status
-              </Button>
-            }
-          >
-            {statusOptions.map((status) => (
-              <Menu.Item
-                key={status}
-                onPress={() => handleUpdateStatus(status)}
-                title={status}
-              />
-            ))}
-          </Menu>
+          {userRole === 'CUSTOMER_ADVISOR' ? (
+            <Menu
+              visible={statusMenuVisible}
+              onDismiss={() => setStatusMenuVisible(false)}
+              anchor={
+                <Button 
+                  mode="outlined" 
+                  compact 
+                  onPress={() => setStatusMenuVisible(true)}
+                  disabled={updating}
+                >
+                  Change Status
+                </Button>
+              }
+            >
+              {statusOptions.map((status) => (
+                <Menu.Item
+                  key={status}
+                  onPress={() => handleUpdateStatus(status)}
+                  title={status}
+                />
+              ))}
+            </Menu>
+          ) : (
+            <Text style={styles.readOnlyLabel}>Read-Only</Text>
+          )}
         </View>
 
         {/* Customer Information */}
@@ -385,18 +407,20 @@ export function BookingDetailsScreen({ route, navigation }: any): React.JSX.Elem
               <Text variant="titleLarge" style={styles.sectionTitle}>
                 <Icon source="cash" size={20} /> Finance Information
               </Text>
-              <Button 
-                mode="text" 
-                compact 
-                onPress={() => setEditingFinance(!editingFinance)}
-                disabled={updating}
-              >
-                {editingFinance ? 'Cancel' : 'Edit'}
-              </Button>
+              {userRole === 'CUSTOMER_ADVISOR' && (
+                <Button 
+                  mode="text" 
+                  compact 
+                  onPress={() => setEditingFinance(!editingFinance)}
+                  disabled={updating}
+                >
+                  {editingFinance ? 'Cancel' : 'Edit'}
+                </Button>
+              )}
             </View>
             <Divider style={styles.divider} />
             
-            {editingFinance ? (
+            {editingFinance && userRole === 'CUSTOMER_ADVISOR' ? (
               <>
                 <View style={styles.switchRow}>
                   <Text style={styles.infoLabel}>Finance Required:</Text>
@@ -565,49 +589,11 @@ export function BookingDetailsScreen({ route, navigation }: any): React.JSX.Elem
               )
             )}
 
-            {/* Team Lead Remarks - READ ONLY for Advisors */}
-            {booking.teamLeadRemarks && (
-              <View style={styles.remarksSection}>
-                <Text style={styles.roleLabel}>
-                  <Icon source="account-supervisor" size={16} /> Team Lead:
-                </Text>
-                <Text style={styles.remarksText}>{booking.teamLeadRemarks}</Text>
-              </View>
-            )}
-
-            {/* Sales Manager Remarks - READ ONLY for Advisors */}
-            {booking.salesManagerRemarks && (
-              <View style={styles.remarksSection}>
-                <Text style={styles.roleLabel}>
-                  <Icon source="briefcase-account" size={16} /> Sales Manager:
-                </Text>
-                <Text style={styles.remarksText}>{booking.salesManagerRemarks}</Text>
-              </View>
-            )}
-
-            {/* General Manager Remarks - READ ONLY for Advisors */}
-            {booking.generalManagerRemarks && (
-              <View style={styles.remarksSection}>
-                <Text style={styles.roleLabel}>
-                  <Icon source="account-star" size={16} /> General Manager:
-                </Text>
-                <Text style={styles.remarksText}>{booking.generalManagerRemarks}</Text>
-              </View>
-            )}
-
-            {/* Admin Remarks - READ ONLY for Advisors */}
-            {booking.adminRemarks && (
-              <View style={styles.remarksSection}>
-                <Text style={styles.roleLabel}>
-                  <Icon source="shield-account" size={16} /> Admin:
-                </Text>
-                <Text style={styles.remarksText}>{booking.adminRemarks}</Text>
-              </View>
-            )}
+            {/* Note: Additional remarks fields (teamLeadRemarks, salesManagerRemarks, etc.) 
+                 are not available in the current Booking interface */}
             
             {/* Show message if no remarks yet */}
-            {!booking.advisorRemarks && !booking.teamLeadRemarks && !booking.salesManagerRemarks && 
-             !booking.generalManagerRemarks && !booking.adminRemarks && userRole !== 'CUSTOMER_ADVISOR' && (
+            {!booking.advisorRemarks && userRole !== 'CUSTOMER_ADVISOR' && (
               <Text style={styles.noRemarksText}>No remarks have been added yet.</Text>
             )}
           </Card.Content>
@@ -828,5 +814,11 @@ const styles = StyleSheet.create({
   errorText: {
     color: theme.colors.error,
     textAlign: 'center',
+  },
+  readOnlyLabel: {
+    color: theme.colors.onSurfaceVariant,
+    fontSize: 12,
+    fontWeight: '600',
+    textTransform: 'uppercase',
   },
 });

@@ -46,12 +46,11 @@ export interface CreateEnquiryRequest {
   customerContact: string;
   customerEmail?: string;
   model: string;
-  variant?: string;
+  variant: string;
   color?: string;
-  source: EnquirySource;
   expectedBookingDate?: string;
   caRemarks?: string;
-  dealerCode?: string;
+  category?: EnquiryCategory;
 }
 
 export interface UpdateEnquiryRequest {
@@ -64,6 +63,16 @@ export interface UpdateEnquiryRequest {
   status?: EnquiryStatus;
   category?: EnquiryCategory;
   caRemarks?: string;
+}
+
+export interface EnquiryFilters {
+  page?: number;
+  limit?: number;
+  status?: EnquiryStatus;
+  category?: EnquiryCategory;
+  search?: string;
+  sortBy?: string;
+  sortOrder?: 'asc' | 'desc';
 }
 
 export interface Enquiry {
@@ -137,14 +146,10 @@ export type TimelineCategory = 'today' | 'delivery_today' | 'pending_update' | '
 
 export interface UpdateBookingRequest {
   status?: BookingStatus;
-  expectedDeliveryDate?: string; // ISO DateTime
+  expectedDeliveryDate?: string; // YYYY-MM-DD format
   financeRequired?: boolean;
   financerName?: string;
-  fileLoginDate?: string; // ISO DateTime
-  approvalDate?: string; // ISO DateTime
   stockAvailability?: StockAvailability;
-  backOrderStatus?: boolean;
-  rtoDate?: string; // ISO DateTime
   advisorRemarks?: string;
 }
 
@@ -155,9 +160,11 @@ export interface Booking {
   customerEmail?: string;
   status: BookingStatus;
   variant: string;
+  vcCode?: string;
   color?: string;
   fuelType?: string;
   transmission?: string;
+  advisorId?: string;
   bookingDate: string;
   expectedDeliveryDate?: string;
   financeRequired: boolean;
@@ -168,6 +175,10 @@ export interface Booking {
   backOrderStatus: boolean;
   rtoDate?: string;
   advisorRemarks?: string;
+  teamLeadRemarks?: string;
+  salesManagerRemarks?: string;
+  generalManagerRemarks?: string;
+  adminRemarks?: string;
   dealerCode?: string;
   zone?: string;
   region?: string;
@@ -217,7 +228,51 @@ export interface Quotation {
 export interface ApiResponse<T> {
   success: boolean;
   message: string;
-  data?: T;
+  data: T;
+}
+
+// Booking filters interface
+export interface BookingFilters {
+  page?: number;
+  limit?: number;
+  status?: BookingStatus;
+  timeline?: TimelineCategory;
+  search?: string;
+  sortBy?: string;
+  sortOrder?: 'asc' | 'desc';
+}
+
+export interface BulkImportResponse {
+  success: boolean;
+  message: string;
+  data: {
+    importId: string;
+    totalRecords: number;
+    processedRecords: number;
+    successfulRecords: number;
+    failedRecords: number;
+    errors: Array<{
+      row: number;
+      field: string;
+      message: string;
+    }>;
+  };
+}
+
+export interface ImportProgress {
+  id: string;
+  status: 'PENDING' | 'PROCESSING' | 'COMPLETED' | 'FAILED';
+  totalRecords: number;
+  processedRecords: number;
+  successfulRecords: number;
+  failedRecords: number;
+  errors: Array<{
+    row: number;
+    field: string;
+    message: string;
+  }>;
+  createdAt: string;
+  completedAt?: string;
 }
 
 export interface PaginatedEnquiriesResponse {

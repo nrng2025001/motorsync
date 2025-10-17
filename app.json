@@ -46,7 +46,8 @@
         {
           "addGeneratedScheme": false
         }
-      ]
+      ],
+      "expo-font"
     ],
     "scheme": "motorsync",
     "newArchEnabled": true,

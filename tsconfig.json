@@ -8,6 +8,7 @@
       "esnext"
     ],
     "moduleResolution": "bundler",
+    "customConditions": ["react-native"],
     "noEmit": true,
     "skipLibCheck": true,
     "resolveJsonModule": true,

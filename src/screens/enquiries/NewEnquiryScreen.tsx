@@ -25,58 +25,258 @@ import { StackNavigationProp } from '@react-navigation/stack';
 
 import { DatePickerISO } from '../../components/DatePickerISO';
 import * as EnquiryService from '../../services/enquiry.service';
-import { EnquirySource, CreateEnquiryRequest } from '../../services/types';
+import { CreateEnquiryRequest, EnquiryCategory } from '../../services/types';
 import { MainStackParamList } from '../../navigation/MainNavigator';
+import { enquiryAPI } from '../../api/enquiries';
 
 type NavigationProp = StackNavigationProp<MainStackParamList>;
 
-// Source options matching backend enum
-const SOURCE_OPTIONS = [
-  { label: 'Showroom Visit', value: EnquirySource.SHOWROOM },
-  { label: 'Website', value: EnquirySource.WEBSITE },
-  { label: 'Phone Call', value: EnquirySource.PHONE },
-  { label: 'Referral', value: EnquirySource.REFERRAL },
-  { label: 'Walk In', value: EnquirySource.WALK_IN },
-];
-
-// Common vehicle models (Indian market)
-const VEHICLE_MODELS = [
+// Hardcoded models and variants as fallback
+const HARDCODED_MODELS = [
   'Tata Nexon',
   'Tata Harrier',
   'Tata Safari',
-  'Tata Punch',
   'Tata Altroz',
-  'Maruti Suzuki Swift',
-  'Maruti Suzuki Brezza',
-  'Hyundai Creta',
-  'Hyundai Venue',
-  'Mahindra Scorpio',
-  'Mahindra XUV700',
-  'Other',
+  'Tata Tiago',
+  'Tata Tigor',
+  'Tata Punch',
+  'Tata Curvv',
+  'Tata Curvv EV',
+  'Tata Nexon EV',
+  'Tata Tigor EV',
+  'Tata Tiago EV'
+];
+
+const HARDCODED_VARIANTS: { [key: string]: string[] } = {
+  'Tata Nexon': [
+    'XE',
+    'XM',
+    'XZ',
+    'XZ+',
+    'XZ+ Diesel',
+    'XZ+ Diesel MT',
+    'XZ+ Diesel AMT',
+    'XZ+ Petrol MT',
+    'XZ+ Petrol AMT'
+  ],
+  'Tata Harrier': [
+    'XE',
+    'XM',
+    'XZ',
+    'XZ+',
+    'XZ+ Diesel MT',
+    'XZ+ Diesel AT',
+    'XZ+ Petrol MT',
+    'XZ+ Petrol AT'
+  ],
+  'Tata Safari': [
+    'XE',
+    'XM',
+    'XZ',
+    'XZ+',
+    'XZ+ Diesel MT',
+    'XZ+ Diesel AT',
+    'XZ+ Petrol MT',
+    'XZ+ Petrol AT'
+  ],
+  'Tata Altroz': [
+    'XE',
+    'XM',
+    'XZ',
+    'XZ+',
+    'XZ+ Diesel MT',
+    'XZ+ Petrol MT',
+    'XZ+ Petrol AMT'
+  ],
+  'Tata Tiago': [
+    'XE',
+    'XM',
+    'XZ',
+    'XZ+',
+    'XZ+ Diesel MT',
+    'XZ+ Petrol MT',
+    'XZ+ Petrol AMT'
+  ],
+  'Tata Tigor': [
+    'XE',
+    'XM',
+    'XZ',
+    'XZ+',
+    'XZ+ Diesel MT',
+    'XZ+ Petrol MT',
+    'XZ+ Petrol AMT'
+  ],
+  'Tata Punch': [
+    'Pure',
+    'Adventure',
+    'Accomplished',
+    'Creative',
+    'Creative AMT',
+    'Adventure AMT',
+    'Accomplished AMT'
+  ],
+  'Tata Curvv': [
+    'Pure',
+    'Adventure',
+    'Accomplished',
+    'Creative',
+    'Creative AMT',
+    'Adventure AMT',
+    'Accomplished AMT'
+  ],
+  'Tata Curvv EV': [
+    'Pure',
+    'Adventure',
+    'Accomplished',
+    'Creative',
+    'Creative AMT',
+    'Adventure AMT',
+    'Accomplished AMT'
+  ],
+  'Tata Nexon EV': [
+    'XM',
+    'XZ',
+    'XZ+',
+    'XZ+ LUX',
+    'XZ+ LUX Dark',
+    'XZ+ LUX Dark AMT'
+  ],
+  'Tata Tigor EV': [
+    'XM',
+    'XZ',
+    'XZ+',
+    'XZ+ LUX',
+    'XZ+ LUX Dark'
+  ],
+  'Tata Tiago EV': [
+    'XM',
+    'XZ',
+    'XZ+',
+    'XZ+ LUX',
+    'XZ+ LUX Dark'
+  ]
+};
+
+const HARDCODED_COLORS = [
+  'White',
+  'Black',
+  'Silver',
+  'Grey',
+  'Red',
+  'Blue',
+  'Green',
+  'Orange',
+  'Yellow',
+  'Brown',
+  'Purple',
+  'Gold',
+  'Champagne',
+  'Pearl White',
+  'Metallic Silver',
+  'Metallic Grey',
+  'Metallic Blue',
+  'Metallic Red',
+  'Metallic Green'
 ];
 
 export function NewEnquiryScreen(): React.JSX.Element {
   const navigation = useNavigation<NavigationProp>();
 
   // Form state
-  const [formData, setFormData] = useState<Partial<CreateEnquiryRequest>>({
+  const [formData, setFormData] = useState({
     customerName: '',
     customerContact: '',
     customerEmail: '',
     model: '',
     variant: '',
     color: '',
-    source: EnquirySource.SHOWROOM,
     expectedBookingDate: '',
     caRemarks: '',
-    dealerCode: '',
   });
 
   // UI state
   const [loading, setLoading] = useState(false);
-  const [sourceMenuVisible, setSourceMenuVisible] = useState(false);
   const [modelMenuVisible, setModelMenuVisible] = useState(false);
+  const [variantMenuVisible, setVariantMenuVisible] = useState(false);
+  const [colorMenuVisible, setColorMenuVisible] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
+  
+  // Data state
+  const [models, setModels] = useState<string[]>([]);
+  const [variants, setVariants] = useState<string[]>([]);
+  const [loadingModels, setLoadingModels] = useState(false);
+  const [loadingVariants, setLoadingVariants] = useState(false);
+  const [manualVariant, setManualVariant] = useState('');
+  const [useManualVariant, setUseManualVariant] = useState(false);
+  const [selectedModel, setSelectedModel] = useState<string | null>(null);
+  const [selectedVariant, setSelectedVariant] = useState<string | null>(null);
+
+  // Fetch models from backend with hardcoded fallback
+  const fetchModels = async () => {
+    try {
+      setLoadingModels(true);
+      console.log('🔄 Fetching models from backend...');
+      
+      const response = await enquiryAPI.getModels();
+      console.log('✅ Backend response:', response);
+      
+      // Extract models from the response structure
+      const allModels: string[] = [];
+      if (response?.modelsByBrand) {
+        Object.values(response.modelsByBrand).forEach(brandModels => {
+          allModels.push(...brandModels);
+        });
+      }
+      
+      if (allModels.length > 0) {
+        console.log('✅ Using models from backend:', allModels.length);
+        setModels(allModels);
+      } else {
+        console.log('⚠️ No models available from backend, using hardcoded fallback');
+        setModels(HARDCODED_MODELS);
+      }
+    } catch (error) {
+      console.error('❌ Error fetching models, using hardcoded fallback:', error);
+      setModels(HARDCODED_MODELS);
+    } finally {
+      setLoadingModels(false);
+    }
+  };
+
+
+  // Fetch variants for selected model with hardcoded fallback
+  const fetchVariantsForModel = async (modelName: string) => {
+    try {
+      setLoadingVariants(true);
+      console.log('🔄 Fetching variants for model:', modelName);
+      
+      // Fetch variants from backend
+      const { enquiryAPI } = await import('../../api/enquiries');
+      const variantStrings = await enquiryAPI.getVariants(modelName);
+      
+      if (variantStrings && variantStrings.length > 0) {
+        console.log('✅ Fetched variants from backend:', variantStrings.length);
+        setVariants(variantStrings);
+      } else {
+        console.log('⚠️ No variants available from backend, using hardcoded fallback');
+        const hardcodedVariants = HARDCODED_VARIANTS[modelName] || [];
+        setVariants(hardcodedVariants);
+      }
+      
+    } catch (error) {
+      console.error('❌ Error fetching variants, using hardcoded fallback:', error);
+      const hardcodedVariants = HARDCODED_VARIANTS[modelName] || [];
+      setVariants(hardcodedVariants);
+    } finally {
+      setLoadingVariants(false);
+    }
+  };
+
+
+  // Load models on component mount
+  React.useEffect(() => {
+    fetchModels();
+  }, []);
 
   // Validation
   const validateForm = (): boolean => {
@@ -100,8 +300,12 @@ export function NewEnquiryScreen(): React.JSX.Element {
       newErrors.model = 'Vehicle model is required';
     }
 
-    if (!formData.source) {
-      newErrors.source = 'Source is required';
+    if (!formData.variant?.trim() && !useManualVariant) {
+      newErrors.variant = 'Vehicle variant is required';
+    }
+
+    if (useManualVariant && !manualVariant.trim()) {
+      newErrors.manualVariant = 'Please enter a variant name';
     }
 
     setErrors(newErrors);
@@ -119,22 +323,33 @@ export function NewEnquiryScreen(): React.JSX.Element {
       setLoading(true);
 
       // Prepare data for API (remove empty optional fields)
+      // Use manual variant if selected, otherwise use selected variant
+      const finalVariant = useManualVariant ? manualVariant : formData.variant;
       const requestData: CreateEnquiryRequest = {
         customerName: formData.customerName!,
         customerContact: formData.customerContact!,
-        model: formData.model!,
-        source: formData.source!,
+        variant: finalVariant || '',
+        model: formData.model || '',
+        category: EnquiryCategory.HOT, // Set default category to HOT
       };
 
       // Add optional fields if provided
       if (formData.customerEmail) requestData.customerEmail = formData.customerEmail;
-      if (formData.variant) requestData.variant = formData.variant;
       if (formData.color) requestData.color = formData.color;
-      if (formData.expectedBookingDate) requestData.expectedBookingDate = formData.expectedBookingDate;
+      if (formData.expectedBookingDate) {
+        // Format date as YYYY-MM-DD for backend
+        const date = new Date(formData.expectedBookingDate);
+        requestData.expectedBookingDate = date.toISOString().split('T')[0];
+      }
       if (formData.caRemarks) requestData.caRemarks = formData.caRemarks;
-      if (formData.dealerCode) requestData.dealerCode = formData.dealerCode;
 
-      await EnquiryService.createEnquiry(requestData);
+      // Debug logging
+      console.log('📤 [NewEnquiryScreen] Creating enquiry with data:', JSON.stringify(requestData, null, 2));
+      console.log('📤 [NewEnquiryScreen] Manual variant:', useManualVariant);
+      console.log('📤 [NewEnquiryScreen] Final variant:', finalVariant);
+
+      const createdEnquiry = await EnquiryService.createEnquiry(requestData);
+      console.log('✅ [NewEnquiryScreen] Enquiry created successfully:', createdEnquiry);
 
       Alert.alert(
         'Success',
@@ -142,7 +357,12 @@ export function NewEnquiryScreen(): React.JSX.Element {
         [
           {
             text: 'OK',
-            onPress: () => navigation.goBack(),
+            onPress: () => {
+              // Small delay to ensure backend processing is complete
+              setTimeout(() => {
+                navigation.goBack();
+              }, 500);
+            },
           },
         ]
       );
@@ -157,36 +377,7 @@ export function NewEnquiryScreen(): React.JSX.Element {
     }
   };
 
-  const renderSourceMenu = () => (
-    <Menu
-      visible={sourceMenuVisible}
-      onDismiss={() => setSourceMenuVisible(false)}
-      anchor={
-        <TextInput
-          label="Source *"
-          value={SOURCE_OPTIONS.find(o => o.value === formData.source)?.label}
-          editable={false}
-          mode="outlined"
-          right={<TextInput.Icon icon="chevron-down" onPress={() => setSourceMenuVisible(true)} />}
-          onPressIn={() => setSourceMenuVisible(true)}
-          error={!!errors.source}
-          style={styles.input}
-        />
-      }
-    >
-      {SOURCE_OPTIONS.map((option) => (
-        <Menu.Item
-          key={option.value}
-          onPress={() => {
-            setFormData({ ...formData, source: option.value });
-            setSourceMenuVisible(false);
-            if (errors.source) setErrors({ ...errors, source: '' });
-          }}
-          title={option.label}
-        />
-      ))}
-    </Menu>
-  );
+
 
   const renderModelMenu = () => (
     <Menu
@@ -194,36 +385,103 @@ export function NewEnquiryScreen(): React.JSX.Element {
       onDismiss={() => setModelMenuVisible(false)}
       anchor={
         <TextInput
-          label="Vehicle Model *"
+          label="Select Model *"
           value={formData.model}
           editable={false}
           mode="outlined"
-          right={<TextInput.Icon icon="chevron-down" onPress={() => setModelMenuVisible(true)} />}
-          onPressIn={() => setModelMenuVisible(true)}
+          right={
+            loadingModels ? (
+              <ActivityIndicator size="small" color="#666" />
+            ) : (
+              <TextInput.Icon icon="chevron-down" onPress={() => setModelMenuVisible(true)} />
+            )
+          }
+          onPressIn={() => !loadingModels && setModelMenuVisible(true)}
           error={!!errors.model}
           style={styles.input}
+          placeholder="Choose a vehicle model..."
         />
       }
     >
-      {VEHICLE_MODELS.map((model) => (
+      {models.map((model, index) => (
         <Menu.Item
-          key={model}
+          key={index}
           onPress={() => {
-            setFormData({ ...formData, model });
+            setFormData({ ...formData, model: model, variant: '', color: '' });
+            setSelectedModel(model);
             setModelMenuVisible(false);
             if (errors.model) setErrors({ ...errors, model: '' });
+            // Fetch variants for selected model
+            fetchVariantsForModel(model);
           }}
           title={model}
         />
       ))}
-      <Divider />
+      {models.length === 0 && !loadingModels && (
+        <Menu.Item
+          onPress={() => setModelMenuVisible(false)}
+          title="No models available"
+          disabled
+        />
+      )}
+    </Menu>
+  );
+
+  const renderVariantMenu = () => (
+    <Menu
+      visible={variantMenuVisible}
+      onDismiss={() => setVariantMenuVisible(false)}
+      anchor={
+        <TextInput
+          label="Select Variant *"
+          value={useManualVariant ? manualVariant : formData.variant}
+          editable={false}
+          mode="outlined"
+          right={
+            loadingVariants ? (
+              <ActivityIndicator size="small" color="#666" />
+            ) : (
+              <TextInput.Icon icon="chevron-down" onPress={() => formData.model && setVariantMenuVisible(true)} />
+            )
+          }
+          onPressIn={() => formData.model && !loadingVariants && setVariantMenuVisible(true)}
+          error={!!errors.variant || !!errors.manualVariant}
+          style={[styles.input, !formData.model && styles.disabledInput]}
+          placeholder={formData.model ? "Choose a vehicle variant..." : "Select model first"}
+          disabled={!formData.model}
+        />
+      }
+    >
+      {variants.map((variant, index) => (
+        <Menu.Item
+          key={index}
+          onPress={() => {
+            setFormData({ ...formData, variant: variant });
+            setSelectedVariant(variant);
+            setUseManualVariant(false);
+            setManualVariant('');
+            setVariantMenuVisible(false);
+            if (errors.variant) setErrors({ ...errors, variant: '' });
+          }}
+          title={variant}
+        />
+      ))}
       <Menu.Item
         onPress={() => {
-          setModelMenuVisible(false);
-          // Allow custom input
+          setUseManualVariant(true);
+          setVariantMenuVisible(false);
+          if (errors.variant) setErrors({ ...errors, variant: '' });
         }}
-        title="Type custom model..."
+        title="📝 Enter variant manually"
+        style={{ backgroundColor: '#f0f0f0' }}
       />
+      {variants.length === 0 && !loadingVariants && (
+        <Menu.Item
+          onPress={() => setVariantMenuVisible(false)}
+          title="No variants available"
+          disabled
+        />
+      )}
     </Menu>
   );
 
@@ -303,25 +561,82 @@ export function NewEnquiryScreen(): React.JSX.Element {
             {renderModelMenu()}
             {errors.model && <Text style={styles.errorText}>{errors.model}</Text>}
 
-            <TextInput
-              label="Variant (Optional)"
-              value={formData.variant}
-              onChangeText={(text) => setFormData({ ...formData, variant: text })}
-              mode="outlined"
-              placeholder="e.g., XZ+ Petrol"
-              style={styles.input}
-              left={<TextInput.Icon icon="car" />}
-            />
+            {renderVariantMenu()}
+            {errors.variant && <Text style={styles.errorText}>{errors.variant}</Text>}
 
-            <TextInput
-              label="Color (Optional)"
-              value={formData.color}
-              onChangeText={(text) => setFormData({ ...formData, color: text })}
-              mode="outlined"
-              placeholder="e.g., Blue"
-              style={styles.input}
-              left={<TextInput.Icon icon="palette" />}
-            />
+            {useManualVariant && (
+              <>
+                <TextInput
+                  label="Enter Variant Manually *"
+                  value={manualVariant}
+                  onChangeText={(text) => {
+                    setManualVariant(text);
+                    if (errors.manualVariant) setErrors({ ...errors, manualVariant: '' });
+                  }}
+                  mode="outlined"
+                  placeholder="e.g., Tata Harrier XZ Plus Diesel AT"
+                  style={styles.input}
+                  left={<TextInput.Icon icon="pencil" />}
+                  error={!!errors.manualVariant}
+                />
+                <Text style={[styles.helperText, { marginTop: -8, marginBottom: 8 }]}>
+                  Enter the complete variant name as it should appear
+                </Text>
+                <Button
+                  mode="outlined"
+                  onPress={() => {
+                    setUseManualVariant(false);
+                    setManualVariant('');
+                    if (errors.manualVariant) setErrors({ ...errors, manualVariant: '' });
+                  }}
+                  style={[styles.input, { marginTop: 8 }]}
+                  icon="arrow-left"
+                >
+                  Back to dropdown selection
+                </Button>
+              </>
+            )}
+            {errors.manualVariant && <Text style={styles.errorText}>{errors.manualVariant}</Text>}
+
+            <Menu
+              visible={colorMenuVisible}
+              onDismiss={() => setColorMenuVisible(false)}
+              anchor={
+                <TextInput
+                  label="Color (Optional)"
+                  value={formData.color}
+                  mode="outlined"
+                  placeholder="Select color"
+                  style={styles.input}
+                  left={<TextInput.Icon icon="palette" />}
+                  right={
+                    <TextInput.Icon 
+                      icon="chevron-down" 
+                      onPress={() => setColorMenuVisible(true)} 
+                    />
+                  }
+                  editable={false}
+                />
+              }
+            >
+              <Menu.Item
+                onPress={() => {
+                  setFormData({ ...formData, color: '' });
+                  setColorMenuVisible(false);
+                }}
+                title="No Color"
+              />
+              {HARDCODED_COLORS.map((color, index) => (
+                <Menu.Item
+                  key={index}
+                  onPress={() => {
+                    setFormData({ ...formData, color: color });
+                    setColorMenuVisible(false);
+                  }}
+                  title={color}
+                />
+              ))}
+            </Menu>
           </Card.Content>
         </Card>
 
@@ -331,8 +646,6 @@ export function NewEnquiryScreen(): React.JSX.Element {
               Additional Details
             </Text>
 
-            {renderSourceMenu()}
-            {errors.source && <Text style={styles.errorText}>{errors.source}</Text>}
 
             <DatePickerISO
               label="Expected Booking Date (Optional)"
@@ -341,15 +654,6 @@ export function NewEnquiryScreen(): React.JSX.Element {
               minimumDate={new Date()}
             />
 
-            <TextInput
-              label="Dealer Code (Optional)"
-              value={formData.dealerCode}
-              onChangeText={(text) => setFormData({ ...formData, dealerCode: text })}
-              mode="outlined"
-              placeholder="e.g., TATA001"
-              style={styles.input}
-              left={<TextInput.Icon icon="store" />}
-            />
 
             <TextInput
               label="Remarks (Optional)"
@@ -421,6 +725,10 @@ const styles = StyleSheet.create({
     marginBottom: 12,
     backgroundColor: '#FFFFFF',
   },
+  disabledInput: {
+    backgroundColor: '#F3F4F6',
+    opacity: 0.6,
+  },
   errorText: {
     color: '#EF4444',
     fontSize: 12,
@@ -432,6 +740,11 @@ const styles = StyleSheet.create({
     color: '#6B7280',
     textAlign: 'center',
     marginBottom: 8,
+  },
+  helperText: {
+    color: '#6B7280',
+    fontSize: 12,
+    marginLeft: 12,
   },
   actions: {
     flexDirection: 'row',

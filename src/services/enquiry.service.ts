@@ -1,14 +1,15 @@
 /**
  * Enquiry Service
- * Handles all enquiry-related API operations
+ * Handles all enquiry-related API operations using the new API structure
  */
 
-import { apiRequest, buildQueryString } from './api.config';
+import { enquiryAPI } from '../api/enquiries';
 import {
   CreateEnquiryRequest,
   UpdateEnquiryRequest,
   Enquiry,
   EnquiryCategory,
+  EnquiryStatus,
   PaginatedEnquiriesResponse,
   AutoBookingResponse,
   ApiResponse
@@ -18,12 +19,14 @@ import {
  * Create a new enquiry
  */
 export async function createEnquiry(data: CreateEnquiryRequest): Promise<Enquiry> {
-  const response = await apiRequest<{ enquiry: Enquiry }>('/enquiries', {
-    method: 'POST',
-    body: JSON.stringify(data),
-  });
+  console.log('📤 [EnquiryService.createEnquiry] Creating enquiry with data:', data);
   
-  return response.enquiry;
+  const response = await enquiryAPI.createEnquiry(data);
+  
+  console.log('📥 [EnquiryService.createEnquiry] Response received:', response);
+  console.log('📥 [EnquiryService.createEnquiry] Created enquiry:', response.data);
+  
+  return response.data || response;
 }
 
 /**
@@ -34,10 +37,7 @@ export async function getMyEnquiries(
   limit: number = 100,
   category?: EnquiryCategory
 ): Promise<{ enquiries: Enquiry[]; pagination: any }> {
-  // Import the API class dynamically to avoid circular dependencies
-  const { EnquiriesAPI } = await import('../api/enquiries');
-  
-  const enquiries = await EnquiriesAPI.getEnquiries({
+  const response = await enquiryAPI.getEnquiries({
     page,
     limit,
     category,
@@ -45,108 +45,147 @@ export async function getMyEnquiries(
     sortOrder: 'desc',
   });
   
+  // Handle different response structures
+  const allEnquiries = (response.data as any)?.enquiries || [];
+  
+  // Filter enquiries by current user (this will be done in the calling component)
+  const enquiries = allEnquiries;
+  const pagination = (response.data as any)?.pagination || {
+    page,
+    limit,
+    total: enquiries.length,
+    totalPages: Math.ceil(enquiries.length / limit)
+  };
+  
   return {
     enquiries: enquiries as Enquiry[],
-    pagination: {
-      page,
-      limit,
-      total: enquiries.length,
-      totalPages: Math.ceil(enquiries.length / limit),
-    }
+    pagination
   };
 }
 
 /**
- * Get enquiries by category (HOT, LOST, BOOKED)
- */
-export async function getEnquiriesByCategory(
-  category: EnquiryCategory
-): Promise<{ enquiries: Enquiry[]; pagination: any }> {
-  return getMyEnquiries(1, 1000, category);
-}
-
-/**
- * Get single enquiry by ID
+ * Get enquiry by ID
  */
 export async function getEnquiryById(id: string): Promise<Enquiry> {
-  const response = await apiRequest<{ enquiry: Enquiry }>(`/enquiries/${id}`);
-  return response.enquiry;
-}
-
-/**
- * Update an enquiry
- */
-export async function updateEnquiry(
-  id: string,
-  data: UpdateEnquiryRequest
-): Promise<Enquiry> {
-  const response = await apiRequest<{ enquiry: Enquiry }>(`/enquiries/${id}`, {
-    method: 'PUT',
-    body: JSON.stringify(data),
-  });
+  console.log('🔍 [EnquiryService.getEnquiryById] Fetching enquiry:', id);
   
-  return response.enquiry;
-}
-
-/**
- * Convert enquiry to booking (set category to BOOKED)
- * Handles stock validation and auto-booking creation
- */
-export async function convertEnquiryToBooking(
-  id: string
-): Promise<AutoBookingResponse> {
-  try {
-    const response = await apiRequest<AutoBookingResponse>(`/enquiries/${id}`, {
-      method: 'PUT',
-      body: JSON.stringify({ category: EnquiryCategory.BOOKED }),
-    });
-    
-    return response;
-  } catch (error: any) {
-    // Handle stock validation errors
-    if (error.message?.includes('out of stock')) {
-      throw new Error(`Cannot convert to booking: Vehicle is out of stock. ${error.message}`);
-    }
-    throw error;
-  }
-}
-
-/**
- * Update enquiry category
- */
-export async function updateEnquiryCategory(
-  id: string,
-  category: EnquiryCategory
-): Promise<Enquiry> {
-  return updateEnquiry(id, { category });
-}
-
-/**
- * Delete an enquiry
- */
-export async function deleteEnquiry(id: string): Promise<void> {
-  await apiRequest<void>(`/enquiries/${id}`, {
-    method: 'DELETE',
-  });
-}
-
-/**
- * Get enquiries stats (count by category)
- */
-export async function getEnquiriesStats(): Promise<{
-  hot: number;
-  lost: number;
-  booked: number;
-  total: number;
-}> {
-  const allEnquiries = await getMyEnquiries(1, 1000);
-  const enquiries = allEnquiries.enquiries || [];
+  const response = await enquiryAPI.getEnquiryById(id);
   
+  console.log('📊 [EnquiryService.getEnquiryById] Response received:', response);
+  
+  return response.data || response;
+}
+
+/**
+ * Update enquiry
+ */
+export async function updateEnquiry(id: string, data: UpdateEnquiryRequest): Promise<Enquiry> {
+  console.log('🔄 [EnquiryService.updateEnquiry] Updating enquiry:', id, data);
+  
+  const response = await enquiryAPI.updateEnquiry(id, data);
+  
+  console.log('✅ [EnquiryService.updateEnquiry] Response received:', response);
+  
+  return response.data || response;
+}
+
+/**
+ * Convert enquiry to booking
+ */
+export async function convertEnquiryToBooking(enquiryId: string): Promise<AutoBookingResponse> {
+  console.log('🔄 [EnquiryService.convertEnquiryToBooking] Converting enquiry to booking:', enquiryId);
+  
+  // This would typically call a specific endpoint for conversion
+  // For now, we'll update the enquiry status to CONVERTED
+  const response = await enquiryAPI.updateStatus(enquiryId, EnquiryStatus.CONVERTED);
+  
+  console.log('✅ [EnquiryService.convertEnquiryToBooking] Conversion completed:', response);
+  
+  // Return a mock booking response for now
   return {
-    hot: enquiries.filter(e => e.category === EnquiryCategory.HOT).length,
-    lost: enquiries.filter(e => e.category === EnquiryCategory.LOST).length,
-    booked: enquiries.filter(e => e.category === EnquiryCategory.BOOKED).length,
-    total: enquiries.length,
+    success: true,
+    message: 'Enquiry converted to booking successfully',
+    enquiry: response.data || response,
+    booking: null // Would be populated by actual conversion endpoint
   };
 }
 
+/**
+ * Delete enquiry
+ */
+export async function deleteEnquiry(id: string): Promise<void> {
+  console.log('🗑️ [EnquiryService.deleteEnquiry] Deleting enquiry:', id);
+  
+  await enquiryAPI.deleteEnquiry(id);
+  
+  console.log('✅ [EnquiryService.deleteEnquiry] Enquiry deleted successfully');
+}
+
+/**
+ * Get enquiry statistics
+ */
+export async function getEnquiryStats(): Promise<{
+  total: number;
+  byStatus: Record<string, number>;
+  byCategory: Record<string, number>;
+}> {
+  console.log('📊 [EnquiryService.getEnquiryStats] Fetching enquiry statistics');
+  
+  const response = await enquiryAPI.getEnquiryStats();
+  
+  console.log('📊 [EnquiryService.getEnquiryStats] Response received:', response);
+  
+  return response.data || response;
+}
+
+/**
+ * Get vehicle models
+ */
+export async function getModels(): Promise<{ modelsByBrand: { [brand: string]: string[] } }> {
+  console.log('🚗 [EnquiryService.getModels] Fetching vehicle models');
+  
+  const response = await enquiryAPI.getModels();
+  
+  console.log('🚗 [EnquiryService.getModels] Response received:', response);
+  
+  return response;
+}
+
+/**
+ * Get vehicle variants
+ */
+export async function getVariants(model?: string): Promise<string[]> {
+  console.log('🔧 [EnquiryService.getVariants] Fetching variants for model:', model);
+  
+  const response = await enquiryAPI.getVariants(model);
+  
+  console.log('🔧 [EnquiryService.getVariants] Response received:', response);
+  
+  return response;
+}
+
+/**
+ * Get available colors
+ */
+export async function getColors(): Promise<string[]> {
+  console.log('🎨 [EnquiryService.getColors] Fetching available colors');
+  
+  const response = await enquiryAPI.getColors();
+  
+  console.log('🎨 [EnquiryService.getColors] Response received:', response);
+  
+  return response;
+}
+
+/**
+ * Get enquiry sources
+ */
+export async function getSources(): Promise<string[]> {
+  console.log('📋 [EnquiryService.getSources] Fetching enquiry sources');
+  
+  const response = await enquiryAPI.getSources();
+  
+  console.log('📋 [EnquiryService.getSources] Response received:', response);
+  
+  return response;
+}

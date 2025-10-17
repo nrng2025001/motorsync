@@ -21,18 +21,25 @@ import {
   ActivityIndicator,
   Chip,
   Snackbar,
+  Menu,
+  Button,
+  Card,
+  Divider,
+  IconButton,
 } from 'react-native-paper';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { StackNavigationProp } from '@react-navigation/stack';
 import { LinearGradient as ExpoLinearGradient } from 'expo-linear-gradient';
 import Svg, { Path, Rect, Defs, LinearGradient, Stop, G, Ellipse, Circle } from 'react-native-svg';
 
 import { EnquiryCard } from '../../components/EnquiryCard';
 import * as EnquiryService from '../../services/enquiry.service';
-import { Enquiry, EnquiryCategory, AutoBookingResponse } from '../../services/types';
+import { enquiryAPI } from '../../api/enquiries';
+import { Enquiry, EnquiryCategory, EnquiryStatus, EnquirySource, AutoBookingResponse } from '../../services/types';
 import { MainStackParamList } from '../../navigation/MainNavigator';
 import { theme, spacing, shadows, borderRadius } from '../../utils/theme';
+import { useAuth } from '../../context/AuthContext';
 
 const { width, height } = Dimensions.get('window');
 
@@ -80,14 +87,98 @@ const BackgroundPattern = () => (
 
 export function EnquiriesScreen(): React.JSX.Element {
   const navigation = useNavigation<NavigationProp>();
+  const { state: authState } = useAuth();
+
+  // Get user role and permissions
+  const userRole = authState.user?.role?.name || 'CUSTOMER_ADVISOR';
+  const currentUserId = (authState.user as any)?.user?.firebaseUid || authState.user?.firebaseUid;
 
   // State
-  const [selectedCategory, setSelectedCategory] = useState<EnquiryCategory>(EnquiryCategory.HOT);
+  const [selectedCategory, setSelectedCategory] = useState<EnquiryCategory | 'ALL'>(EnquiryCategory.HOT);
+  const [selectedStatus, setSelectedStatus] = useState<EnquiryStatus | 'ALL'>('ALL');
   const [allEnquiries, setAllEnquiries] = useState<Enquiry[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [snackbar, setSnackbar] = useState({ visible: false, message: '', type: 'info' as 'info' | 'success' | 'error' });
+  
+  // Filter and menu states
+  const [showStatusMenu, setShowStatusMenu] = useState(false);
+  const [showCategoryMenu, setShowCategoryMenu] = useState(false);
+  const [showFilterMenu, setShowFilterMenu] = useState(false);
+  const [sortBy, setSortBy] = useState<'createdAt' | 'customerName' | 'status'>('createdAt');
+  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
+
+  // Role-based permission functions
+  const canCreateEnquiry = () => {
+    return ['CUSTOMER_ADVISOR', 'TEAM_LEAD', 'SALES_MANAGER', 'GENERAL_MANAGER'].includes(userRole);
+  };
+
+  const canEditEnquiry = (enquiry: Enquiry) => {
+    // Customer advisors can edit their own enquiries
+    if (userRole === 'CUSTOMER_ADVISOR') {
+      return enquiry.createdByUserId === currentUserId || enquiry.assignedToUserId === currentUserId;
+    }
+    // Higher roles can edit enquiries from their team/dealership
+    return ['TEAM_LEAD', 'SALES_MANAGER', 'GENERAL_MANAGER'].includes(userRole);
+  };
+
+  const canDeleteEnquiry = () => {
+    return ['GENERAL_MANAGER', 'ADMIN'].includes(userRole);
+  };
+
+  const canAssignEnquiry = () => {
+    return ['TEAM_LEAD', 'SALES_MANAGER', 'GENERAL_MANAGER'].includes(userRole);
+  };
+
+  // Enhanced filtering and sorting
+  const getFilteredEnquiries = () => {
+    let filtered = [...allEnquiries];
+
+    // Apply search filter
+    if (searchQuery.trim()) {
+      const query = searchQuery.toLowerCase();
+      filtered = filtered.filter(enquiry => 
+        enquiry.customerName.toLowerCase().includes(query) ||
+        enquiry.customerContact.includes(query) ||
+        (enquiry.customerEmail && enquiry.customerEmail.toLowerCase().includes(query)) ||
+        enquiry.model.toLowerCase().includes(query) ||
+        (enquiry.variant && enquiry.variant.toLowerCase().includes(query))
+      );
+    }
+
+    // Apply category filter
+    if (selectedCategory !== 'ALL') {
+      filtered = filtered.filter(enquiry => enquiry.category === selectedCategory);
+    }
+
+    // Apply status filter
+    if (selectedStatus !== 'ALL') {
+      filtered = filtered.filter(enquiry => enquiry.status === selectedStatus);
+    }
+
+    // Apply sorting
+    filtered.sort((a, b) => {
+      let comparison = 0;
+      
+      switch (sortBy) {
+        case 'customerName':
+          comparison = a.customerName.localeCompare(b.customerName);
+          break;
+        case 'status':
+          comparison = a.status.localeCompare(b.status);
+          break;
+        case 'createdAt':
+        default:
+          comparison = new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
+          break;
+      }
+      
+      return sortOrder === 'asc' ? comparison : -comparison;
+    });
+
+    return filtered;
+  };
 
   // Fetch all enquiries (not filtered by category)
   const fetchEnquiries = useCallback(async (showLoading = true) => {
@@ -95,8 +186,54 @@ export function EnquiriesScreen(): React.JSX.Element {
       if (showLoading) setLoading(true);
       
       // Fetch all enquiries without category filter
-      const response = await EnquiryService.getMyEnquiries(1, 100);
-      setAllEnquiries(response.enquiries || []);
+      console.log('🔄 [EnquiriesScreen] Fetching enquiries...');
+      // Handle both possible structures: flat and nested
+      const userData = (authState.user as any)?.user || authState.user;
+      console.log('🔍 [EnquiriesScreen] Current user ID:', userData?.firebaseUid);
+      const response = await enquiryAPI.getEnquiries({ 
+        page: 1, 
+        limit: 100, 
+        sortBy: 'createdAt', 
+        sortOrder: 'desc' 
+      });
+      console.log('📊 [EnquiriesScreen] Response received:', response);
+      console.log('📊 [EnquiriesScreen] Response.data:', response?.data);
+      console.log('📊 [EnquiriesScreen] Response.data.enquiries:', (response?.data as any)?.enquiries);
+      console.log('📊 [EnquiriesScreen] Response.data.data:', (response?.data as any)?.data);
+      
+      // Extract data from responses - handle nested data structure (same as dashboard)
+      const allEnquiriesFromBackend = (response?.data as any)?.enquiries || (response?.data as any)?.data?.enquiries || [];
+      
+      console.log('📊 [EnquiriesScreen] Enquiries array:', allEnquiriesFromBackend);
+      console.log('📊 [EnquiriesScreen] Enquiries count:', allEnquiriesFromBackend.length);
+      console.log('📊 [EnquiriesScreen] First enquiry (if any):', allEnquiriesFromBackend[0]);
+      
+      // Filter enquiries by current user
+      const currentUserId = userData?.firebaseUid;
+      console.log('🔍 [EnquiriesScreen] Current user ID for filtering:', currentUserId);
+      
+      console.log('📊 [EnquiriesScreen] All enquiries from backend:', allEnquiriesFromBackend.length);
+      
+      // Debug: Check if we have enquiries
+      if (allEnquiriesFromBackend.length > 0) {
+        console.log('🔍 [EnquiriesScreen] Sample enquiry from backend:', allEnquiriesFromBackend[0]);
+        console.log('🔍 [EnquiriesScreen] Current user ID:', currentUserId);
+        console.log('🔍 [EnquiriesScreen] Sample enquiry createdByUserId:', allEnquiriesFromBackend[0].createdByUserId);
+        console.log('🔍 [EnquiriesScreen] Sample enquiry assignedToUserId:', allEnquiriesFromBackend[0].assignedToUserId);
+      } else {
+        console.log('⚠️ [EnquiriesScreen] No enquiries returned from backend');
+      }
+      
+      // For now, show all enquiries without filtering to debug
+      setAllEnquiries(allEnquiriesFromBackend);
+      console.log('✅ [EnquiriesScreen] User enquiries set in state');
+      
+      // Debug: Show all enquiries by category
+      const categoryBreakdown = allEnquiriesFromBackend.reduce((acc: Record<string, number>, enquiry: any) => {
+        acc[enquiry.category] = (acc[enquiry.category] || 0) + 1;
+        return acc;
+      }, {} as Record<string, number>);
+      console.log('📊 [EnquiriesScreen] All enquiries by category:', categoryBreakdown);
     } catch (error: any) {
       console.error('Error fetching enquiries:', error);
       setSnackbar({
@@ -115,11 +252,93 @@ export function EnquiriesScreen(): React.JSX.Element {
     fetchEnquiries();
   }, [fetchEnquiries]);
 
+  // Refresh enquiries when screen comes into focus (e.g., returning from NewEnquiryScreen)
+  useFocusEffect(
+    useCallback(() => {
+      console.log('🔄 [EnquiriesScreen] Screen focused, refreshing enquiries...');
+      fetchEnquiries(false); // Don't show loading spinner on focus
+    }, [fetchEnquiries])
+  );
+
+  // Debug user role
+  useEffect(() => {
+    console.log('📊 Current user role:', authState.user?.role?.name);
+    console.log('📊 FAB should be visible:', !!authState.user?.role);
+  }, [authState.user?.role]);
+
   // Refresh handler
   const handleRefresh = useCallback(() => {
     setRefreshing(true);
     fetchEnquiries(false);
   }, [fetchEnquiries]);
+
+  // Status update functions
+  const handleUpdateStatus = async (enquiryId: string, newStatus: EnquiryStatus) => {
+    try {
+      await enquiryAPI.updateStatus(enquiryId, newStatus);
+      setSnackbar({
+        visible: true,
+        message: `Enquiry status updated to ${newStatus}`,
+        type: 'success',
+      });
+      fetchEnquiries(false);
+    } catch (error: any) {
+      setSnackbar({
+        visible: true,
+        message: error.message || 'Failed to update status',
+        type: 'error',
+      });
+    }
+  };
+
+  const handleUpdateCategory = async (enquiryId: string, newCategory: EnquiryCategory) => {
+    try {
+      await enquiryAPI.updateCategory(enquiryId, newCategory);
+      setSnackbar({
+        visible: true,
+        message: `Enquiry category updated to ${newCategory}`,
+        type: 'success',
+      });
+      fetchEnquiries(false);
+    } catch (error: any) {
+      setSnackbar({
+        visible: true,
+        message: error.message || 'Failed to update category',
+        type: 'error',
+      });
+    }
+  };
+
+  const handleDeleteEnquiry = async (enquiryId: string) => {
+    Alert.alert(
+      'Delete Enquiry',
+      'Are you sure you want to delete this enquiry? This action cannot be undone.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await enquiryAPI.deleteEnquiry(enquiryId);
+              setSnackbar({
+                visible: true,
+                message: 'Enquiry deleted successfully',
+                type: 'success',
+              });
+              fetchEnquiries(false);
+            } catch (error: any) {
+              setSnackbar({
+                visible: true,
+                message: error.message || 'Failed to delete enquiry',
+                type: 'error',
+              });
+            }
+          },
+        },
+      ]
+    );
+  };
 
 
   // Edit enquiry
@@ -308,12 +527,14 @@ export function EnquiriesScreen(): React.JSX.Element {
         <Text variant="bodyMedium" style={styles.emptyMessage}>
           {content.message}
         </Text>
-        <TouchableOpacity 
-          style={[styles.emptyActionButton, { backgroundColor: content.color }]}
-          onPress={() => navigation.navigate('NewEnquiry')}
-        >
-          <Text style={styles.emptyActionText}>+ Create Enquiry</Text>
-        </TouchableOpacity>
+        {authState.user?.role && (
+          <TouchableOpacity 
+            style={[styles.emptyActionButton, { backgroundColor: content.color }]}
+            onPress={() => navigation.navigate('NewEnquiry')}
+          >
+            <Text style={styles.emptyActionText}>+ Create Enquiry</Text>
+          </TouchableOpacity>
+        )}
       </View>
     );
   };
@@ -401,6 +622,78 @@ export function EnquiriesScreen(): React.JSX.Element {
               iconColor="#3B82F6"
             />
           </View>
+
+          {/* Enhanced Filter Controls */}
+          <View style={styles.filterControls}>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              style={styles.filterScrollView}
+              contentContainerStyle={styles.filterScrollContent}
+            >
+              {/* Status Filter */}
+              <Menu
+                visible={showStatusMenu}
+                onDismiss={() => setShowStatusMenu(false)}
+                anchor={
+                  <Button
+                    mode="outlined"
+                    onPress={() => setShowStatusMenu(true)}
+                    style={styles.filterButton}
+                    contentStyle={styles.filterButtonContent}
+                    icon="filter-variant"
+                  >
+                    Status: {selectedStatus}
+                  </Button>
+                }
+              >
+                <Menu.Item onPress={() => { setSelectedStatus('ALL'); setShowStatusMenu(false); }} title="All Status" />
+                <Menu.Item onPress={() => { setSelectedStatus(EnquiryStatus.OPEN); setShowStatusMenu(false); }} title="Open" />
+                <Menu.Item onPress={() => { setSelectedStatus(EnquiryStatus.CONTACTED); setShowStatusMenu(false); }} title="Contacted" />
+                <Menu.Item onPress={() => { setSelectedStatus(EnquiryStatus.QUALIFIED); setShowStatusMenu(false); }} title="Qualified" />
+                <Menu.Item onPress={() => { setSelectedStatus(EnquiryStatus.CONVERTED); setShowStatusMenu(false); }} title="Converted" />
+                <Menu.Item onPress={() => { setSelectedStatus(EnquiryStatus.CLOSED); setShowStatusMenu(false); }} title="Closed" />
+              </Menu>
+
+              {/* Sort Options */}
+              <Menu
+                visible={showFilterMenu}
+                onDismiss={() => setShowFilterMenu(false)}
+                anchor={
+                  <Button
+                    mode="outlined"
+                    onPress={() => setShowFilterMenu(true)}
+                    style={styles.filterButton}
+                    contentStyle={styles.filterButtonContent}
+                    icon="sort"
+                  >
+                    Sort: {sortBy}
+                  </Button>
+                }
+              >
+                <Menu.Item onPress={() => { setSortBy('createdAt'); setShowFilterMenu(false); }} title="Date" />
+                <Menu.Item onPress={() => { setSortBy('customerName'); setShowFilterMenu(false); }} title="Name" />
+                <Menu.Item onPress={() => { setSortBy('status'); setShowFilterMenu(false); }} title="Status" />
+                <Menu.Item onPress={() => { setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc'); setShowFilterMenu(false); }} title={`Order: ${sortOrder.toUpperCase()}`} />
+              </Menu>
+
+              {/* Clear Filters */}
+              {(selectedStatus !== 'ALL' || searchQuery.trim() || selectedCategory !== 'ALL') && (
+                <Button
+                  mode="text"
+                  onPress={() => {
+                    setSelectedStatus('ALL');
+                    setSearchQuery('');
+                    setSelectedCategory(EnquiryCategory.HOT);
+                  }}
+                  style={styles.clearFiltersButton}
+                  icon="close"
+                >
+                  Clear
+                </Button>
+              )}
+            </ScrollView>
+          </View>
           
           <ScrollView
             horizontal
@@ -436,13 +729,13 @@ export function EnquiriesScreen(): React.JSX.Element {
             }
             showsVerticalScrollIndicator={false}
           >
-            {filteredEnquiries.length === 0 ? (
+            {getFilteredEnquiries().length === 0 ? (
               renderEmptyState()
             ) : (
               <>
                 <View style={styles.listHeader}>
                   <Text style={styles.sectionTitle}>
-                    {filteredEnquiries.length} {filteredEnquiries.length === 1 ? 'Enquiry' : 'Enquiries'}
+                    {getFilteredEnquiries().length} {getFilteredEnquiries().length === 1 ? 'Enquiry' : 'Enquiries'}
                   </Text>
                   {searchQuery ? (
                     <Chip
@@ -455,7 +748,7 @@ export function EnquiriesScreen(): React.JSX.Element {
                     </Chip>
                   ) : null}
                 </View>
-                {filteredEnquiries.map((enquiry, index) => (
+                {getFilteredEnquiries().map((enquiry, index) => (
                   <Animated.View
                     key={enquiry.id}
                     style={[
@@ -481,14 +774,31 @@ export function EnquiriesScreen(): React.JSX.Element {
           </ScrollView>
         )}
 
-        {/* Enhanced FAB */}
-        <FAB
-          icon="plus"
-          style={styles.fab}
-          onPress={() => navigation.navigate('NewEnquiry')}
-          label="New Enquiry"
-          color="#FFFFFF"
-        />
+        {/* Enhanced FAB - Available for all roles */}
+        {canCreateEnquiry() && (
+          <FAB
+            icon="plus"
+            style={styles.fab}
+            onPress={() => {
+              console.log('🎯 FAB pressed, navigating to NewEnquiry');
+              navigation.navigate('NewEnquiry');
+            }}
+            label="New Enquiry"
+            color="#FFFFFF"
+          />
+        )}
+        
+        {/* Debug info */}
+        {__DEV__ && (
+          <View style={{ position: 'absolute', top: 100, left: 20, backgroundColor: 'rgba(0,0,0,0.8)', padding: 10, borderRadius: 5 }}>
+            <Text style={{ color: 'white', fontSize: 12 }}>
+              Role: {authState.user?.role?.name || 'undefined'}
+            </Text>
+            <Text style={{ color: 'white', fontSize: 12 }}>
+              FAB Visible: {authState.user?.role ? 'YES' : 'NO'}
+            </Text>
+          </View>
+        )}
 
         {/* Enhanced Snackbar */}
         <Snackbar
@@ -811,5 +1121,31 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '500',
     color: '#FFFFFF',
+  },
+  // Enhanced Filter Controls Styles
+  filterControls: {
+    marginTop: 12,
+    marginBottom: 8,
+  },
+  filterScrollView: {
+    maxHeight: 50,
+  },
+  filterScrollContent: {
+    paddingHorizontal: 24,
+    alignItems: 'center',
+  },
+  filterButton: {
+    marginRight: 8,
+    borderRadius: 20,
+    borderColor: '#E2E8F0',
+    backgroundColor: '#FFFFFF',
+  },
+  filterButtonContent: {
+    height: 36,
+    paddingHorizontal: 12,
+  },
+  clearFiltersButton: {
+    marginLeft: 8,
+    borderRadius: 20,
   },
 });

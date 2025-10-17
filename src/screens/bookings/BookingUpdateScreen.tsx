@@ -27,15 +27,15 @@ import { useNavigation } from '@react-navigation/native';
 import { StackNavigationProp } from '@react-navigation/stack';
 
 import { DatePickerISO } from '../../components/DatePickerISO';
-import * as BookingService from '../../services/booking.service';
+import { bookingAPI } from '../../api/bookings';
 import { 
   Booking, 
   BookingStatus, 
-  StockAvailability, 
-  UpdateBookingRequest 
+  StockAvailability
 } from '../../services/types';
 import { MainStackParamList } from '../../navigation/MainNavigator';
 import { theme, spacing, shadows, borderRadius } from '../../utils/theme';
+import { useAuth } from '../../context/AuthContext';
 
 type NavigationProp = StackNavigationProp<MainStackParamList>;
 
@@ -72,7 +72,36 @@ const STOCK_OPTIONS = [
 
 export function BookingUpdateScreen({ route }: BookingUpdateScreenProps): React.JSX.Element {
   const navigation = useNavigation<NavigationProp>();
+  const { state: authState } = useAuth();
   const { bookingId, booking: initialBooking } = route.params;
+  
+  const userRole = authState.user?.role?.name || 'CUSTOMER_ADVISOR';
+
+  // Restrict access to only Customer Advisors
+  if (userRole !== 'CUSTOMER_ADVISOR') {
+    return (
+      <SafeAreaView style={styles.container}>
+        <View style={styles.restrictedContainer}>
+          <Text variant="headlineMedium" style={styles.restrictedTitle}>
+            Access Restricted
+          </Text>
+          <Text variant="bodyLarge" style={styles.restrictedMessage}>
+            Only Customer Advisors can update booking details.
+          </Text>
+          <Text variant="bodyMedium" style={styles.restrictedSubMessage}>
+            You can view booking details and add remarks only.
+          </Text>
+          <Button 
+            mode="contained" 
+            onPress={() => navigation.goBack()}
+            style={styles.backButton}
+          >
+            Go Back
+          </Button>
+        </View>
+      </SafeAreaView>
+    );
+  }
 
   // State for booking data
   const [booking, setBooking] = useState<Booking | null>(initialBooking || null);
@@ -80,8 +109,55 @@ export function BookingUpdateScreen({ route }: BookingUpdateScreenProps): React.
   const [updating, setUpdating] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Form state
-  const [formData, setFormData] = useState<UpdateBookingRequest>({});
+  // Helper function to check if a field should be editable
+  const isFieldEditable = (fieldName: keyof Booking, currentValue: any): boolean => {
+    if (!booking) return false;
+    
+    // If field is empty/null, it's editable
+    if (!currentValue || currentValue === '' || currentValue === null) {
+      return true;
+    }
+    
+    // If field has value, it's read-only
+    return false;
+  };
+
+  // Helper function to check if user can edit remarks
+  const canEditRemarks = (remarksType: string): boolean => {
+    const rolePermissions: Record<string, string[]> = {
+      'CUSTOMER_ADVISOR': ['advisorRemarks'],
+      'TEAM_LEAD': ['advisorRemarks', 'teamLeadRemarks'],
+      'SALES_MANAGER': ['advisorRemarks', 'teamLeadRemarks', 'salesManagerRemarks'],
+      'GENERAL_MANAGER': ['advisorRemarks', 'teamLeadRemarks', 'salesManagerRemarks', 'generalManagerRemarks'],
+      'ADMIN': ['advisorRemarks', 'teamLeadRemarks', 'salesManagerRemarks', 'generalManagerRemarks', 'adminRemarks'],
+    };
+    
+    return rolePermissions[userRole]?.includes(remarksType) || false;
+  };
+
+  // Form state - matching the comprehensive API structure
+  const [formData, setFormData] = useState<{
+    customerName?: string;
+    customerPhone?: string;
+    customerEmail?: string;
+    variant?: string;
+    vcCode?: string;
+    color?: string;
+    fuelType?: string;
+    transmission?: string;
+    status?: BookingStatus;
+    advisorId?: string;
+    bookingDate?: string;
+    expectedDeliveryDate?: string;
+    stockAvailability?: string;
+    financeRequired?: boolean;
+    financerName?: string;
+    advisorRemarks?: string;
+    teamLeadRemarks?: string;
+    salesManagerRemarks?: string;
+    generalManagerRemarks?: string;
+    adminRemarks?: string;
+  }>({});
   const [errors, setErrors] = useState<Record<string, string>>({});
 
   // Menu visibility states
@@ -100,7 +176,12 @@ export function BookingUpdateScreen({ route }: BookingUpdateScreenProps): React.
   const loadBooking = async () => {
     try {
       setLoading(true);
-      const bookingData = await BookingService.getBookingById(bookingId);
+      const response = await bookingAPI.getBookingById(bookingId);
+      
+      // Handle nested response structure: {data: {data: {booking: {...}}}}
+      const responseData = response.data as any;
+      const bookingData = responseData?.data?.booking || responseData?.booking || responseData;
+      
       setBooking(bookingData);
       initializeFormData(bookingData);
     } catch (error: any) {
@@ -113,16 +194,26 @@ export function BookingUpdateScreen({ route }: BookingUpdateScreenProps): React.
 
   const initializeFormData = (bookingData: Booking) => {
     setFormData({
+      customerName: bookingData.customerName || '',
+      customerPhone: bookingData.customerPhone || '',
+      customerEmail: bookingData.customerEmail || '',
+      variant: bookingData.variant || '',
+      vcCode: bookingData.vcCode || '',
+      color: bookingData.color || '',
+      fuelType: bookingData.fuelType || '',
+      transmission: bookingData.transmission || '',
       status: bookingData.status,
+      advisorId: bookingData.advisorId || '',
+      bookingDate: bookingData.bookingDate || '',
       expectedDeliveryDate: bookingData.expectedDeliveryDate,
+      stockAvailability: bookingData.stockAvailability,
       financeRequired: bookingData.financeRequired,
       financerName: bookingData.financerName || '',
-      fileLoginDate: bookingData.fileLoginDate,
-      approvalDate: bookingData.approvalDate,
-      stockAvailability: bookingData.stockAvailability,
-      backOrderStatus: bookingData.backOrderStatus,
-      rtoDate: bookingData.rtoDate,
       advisorRemarks: bookingData.advisorRemarks || '',
+      teamLeadRemarks: bookingData.teamLeadRemarks || '',
+      salesManagerRemarks: bookingData.salesManagerRemarks || '',
+      generalManagerRemarks: bookingData.generalManagerRemarks || '',
+      adminRemarks: bookingData.adminRemarks || '',
     });
   };
 
@@ -130,6 +221,20 @@ export function BookingUpdateScreen({ route }: BookingUpdateScreenProps): React.
   const validateForm = (): boolean => {
     const newErrors: Record<string, string> = {};
 
+    // Required fields validation
+    if (!formData.customerName?.trim()) {
+      newErrors.customerName = 'Customer name is required';
+    }
+
+    if (!formData.customerPhone?.trim()) {
+      newErrors.customerPhone = 'Customer phone is required';
+    }
+
+    if (!formData.variant?.trim()) {
+      newErrors.variant = 'Vehicle variant is required';
+    }
+
+    // Date validation
     if (formData.expectedDeliveryDate) {
       const deliveryDate = new Date(formData.expectedDeliveryDate);
       const today = new Date();
@@ -138,8 +243,22 @@ export function BookingUpdateScreen({ route }: BookingUpdateScreenProps): React.
       }
     }
 
+    if (formData.bookingDate) {
+      const bookingDate = new Date(formData.bookingDate);
+      const today = new Date();
+      if (bookingDate > today) {
+        newErrors.bookingDate = 'Booking date cannot be in the future';
+      }
+    }
+
+    // Finance validation
     if (formData.financeRequired && !formData.financerName?.trim()) {
       newErrors.financerName = 'Financer name is required when finance is needed';
+    }
+
+    // Email validation
+    if (formData.customerEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.customerEmail)) {
+      newErrors.customerEmail = 'Please enter a valid email address';
     }
 
     setErrors(newErrors);
@@ -156,12 +275,19 @@ export function BookingUpdateScreen({ route }: BookingUpdateScreenProps): React.
     try {
       setUpdating(true);
       
-      // Filter out undefined values
-      const updateData: UpdateBookingRequest = Object.fromEntries(
+      // Filter out undefined values and format dates
+      const updateData = Object.fromEntries(
         Object.entries(formData).filter(([_, value]) => value !== undefined)
       );
+      
+      // Format expectedDeliveryDate as YYYY-MM-DD if present
+      if (updateData.expectedDeliveryDate && typeof updateData.expectedDeliveryDate === 'string') {
+        const date = new Date(updateData.expectedDeliveryDate);
+        updateData.expectedDeliveryDate = date.toISOString().split('T')[0];
+      }
 
-      await BookingService.updateBooking(bookingId, updateData);
+      // Use the comprehensive updateBooking API
+      const response = await bookingAPI.updateBooking(bookingId, updateData);
       
       Alert.alert(
         'Success',
@@ -185,7 +311,7 @@ export function BookingUpdateScreen({ route }: BookingUpdateScreenProps): React.
   };
 
   // Handle date changes
-  const handleDateChange = (field: keyof UpdateBookingRequest, date: string) => {
+  const handleDateChange = (field: keyof typeof formData, date: string) => {
     setFormData(prev => ({ ...prev, [field]: date }));
     if (errors[field]) {
       setErrors(prev => ({ ...prev, [field]: '' }));
@@ -193,7 +319,7 @@ export function BookingUpdateScreen({ route }: BookingUpdateScreenProps): React.
   };
 
   // Handle text input changes
-  const handleTextChange = (field: keyof UpdateBookingRequest, value: string) => {
+  const handleTextChange = (field: keyof typeof formData, value: string) => {
     setFormData(prev => ({ ...prev, [field]: value }));
     if (errors[field]) {
       setErrors(prev => ({ ...prev, [field]: '' }));
@@ -201,7 +327,7 @@ export function BookingUpdateScreen({ route }: BookingUpdateScreenProps): React.
   };
 
   // Handle boolean changes
-  const handleBooleanChange = (field: keyof UpdateBookingRequest, value: boolean) => {
+  const handleBooleanChange = (field: keyof typeof formData, value: boolean) => {
     setFormData(prev => ({ ...prev, [field]: value }));
   };
 
@@ -309,22 +435,161 @@ export function BookingUpdateScreen({ route }: BookingUpdateScreenProps): React.
       </View>
 
       <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent}>
-        {/* Customer Info Card */}
+        {/* Customer Information */}
         <Card style={styles.card}>
           <Card.Content>
             <Text variant="titleMedium" style={styles.cardTitle}>
               Customer Information
             </Text>
-            <Text variant="bodyMedium" style={styles.customerInfo}>
-              {booking.customerName} • {booking.customerPhone}
+            
+            <TextInput
+              label="Customer Name *"
+              value={formData.customerName || ''}
+              onChangeText={(value) => handleTextChange('customerName', value)}
+              mode="outlined"
+              error={!!errors.customerName}
+              editable={isFieldEditable('customerName', booking?.customerName)}
+              style={styles.input}
+            />
+            {errors.customerName && <HelperText type="error">{errors.customerName}</HelperText>}
+            {!isFieldEditable('customerName', booking?.customerName) && (
+              <HelperText type="info">Customer name is already set and cannot be changed</HelperText>
+            )}
+
+            <TextInput
+              label="Customer Phone *"
+              value={formData.customerPhone || ''}
+              onChangeText={(value) => handleTextChange('customerPhone', value)}
+              mode="outlined"
+              keyboardType="phone-pad"
+              error={!!errors.customerPhone}
+              editable={isFieldEditable('customerPhone', booking?.customerPhone)}
+              style={styles.input}
+            />
+            {errors.customerPhone && <HelperText type="error">{errors.customerPhone}</HelperText>}
+            {!isFieldEditable('customerPhone', booking?.customerPhone) && (
+              <HelperText type="info">Customer phone is already set and cannot be changed</HelperText>
+            )}
+
+            <TextInput
+              label="Customer Email"
+              value={formData.customerEmail || ''}
+              onChangeText={(value) => handleTextChange('customerEmail', value)}
+              mode="outlined"
+              keyboardType="email-address"
+              error={!!errors.customerEmail}
+              editable={isFieldEditable('customerEmail', booking?.customerEmail)}
+              style={styles.input}
+            />
+            {errors.customerEmail && <HelperText type="error">{errors.customerEmail}</HelperText>}
+            {!isFieldEditable('customerEmail', booking?.customerEmail) && (
+              <HelperText type="info">Customer email is already set and cannot be changed</HelperText>
+            )}
+          </Card.Content>
+        </Card>
+
+        {/* Vehicle Information */}
+        <Card style={styles.card}>
+          <Card.Content>
+            <Text variant="titleMedium" style={styles.cardTitle}>
+              Vehicle Information
             </Text>
-            <Text variant="bodyMedium" style={styles.vehicleInfo}>
-              {booking.variant} • {booking.color || 'No color specified'}
+            
+            <TextInput
+              label="Vehicle Variant *"
+              value={formData.variant || ''}
+              onChangeText={(value) => handleTextChange('variant', value)}
+              mode="outlined"
+              error={!!errors.variant}
+              editable={isFieldEditable('variant', booking?.variant)}
+              style={styles.input}
+            />
+            {errors.variant && <HelperText type="error">{errors.variant}</HelperText>}
+            {!isFieldEditable('variant', booking?.variant) && (
+              <HelperText type="info">Vehicle variant is already set and cannot be changed</HelperText>
+            )}
+
+            <TextInput
+              label="VC Code"
+              value={formData.vcCode || ''}
+              onChangeText={(value) => handleTextChange('vcCode', value)}
+              mode="outlined"
+              editable={isFieldEditable('vcCode', booking?.vcCode)}
+              style={styles.input}
+            />
+            {!isFieldEditable('vcCode', booking?.vcCode) && (
+              <HelperText type="info">VC Code is already set and cannot be changed</HelperText>
+            )}
+
+            <TextInput
+              label="Color"
+              value={formData.color || ''}
+              onChangeText={(value) => handleTextChange('color', value)}
+              mode="outlined"
+              editable={isFieldEditable('color', booking?.color)}
+              style={styles.input}
+            />
+            {!isFieldEditable('color', booking?.color) && (
+              <HelperText type="info">Color is already set and cannot be changed</HelperText>
+            )}
+
+            <TextInput
+              label="Fuel Type"
+              value={formData.fuelType || ''}
+              onChangeText={(value) => handleTextChange('fuelType', value)}
+              mode="outlined"
+              editable={isFieldEditable('fuelType', booking?.fuelType)}
+              style={styles.input}
+            />
+            {!isFieldEditable('fuelType', booking?.fuelType) && (
+              <HelperText type="info">Fuel type is already set and cannot be changed</HelperText>
+            )}
+
+            <TextInput
+              label="Transmission"
+              value={formData.transmission || ''}
+              onChangeText={(value) => handleTextChange('transmission', value)}
+              mode="outlined"
+              editable={isFieldEditable('transmission', booking?.transmission)}
+              style={styles.input}
+            />
+            {!isFieldEditable('transmission', booking?.transmission) && (
+              <HelperText type="info">Transmission is already set and cannot be changed</HelperText>
+            )}
+          </Card.Content>
+        </Card>
+
+        {/* Booking Information */}
+        <Card style={styles.card}>
+          <Card.Content>
+            <Text variant="titleMedium" style={styles.cardTitle}>
+              Booking Information
             </Text>
-            {booking.source && (
-              <Text variant="bodySmall" style={styles.sourceInfo}>
-                Source: {booking.source === 'MOBILE' ? '📱 Mobile App' : '📊 Bulk Import'}
-              </Text>
+            
+            <TextInput
+              label="Advisor ID"
+              value={formData.advisorId || ''}
+              onChangeText={(value) => handleTextChange('advisorId', value)}
+              mode="outlined"
+              editable={isFieldEditable('advisorId', booking?.advisorId)}
+              style={styles.input}
+            />
+            {!isFieldEditable('advisorId', booking?.advisorId) && (
+              <HelperText type="info">Advisor ID is already set and cannot be changed</HelperText>
+            )}
+
+            <DatePickerISO
+              label="Booking Date"
+              value={formData.bookingDate}
+              onChange={(date) => handleDateChange('bookingDate', date)}
+              error={errors.bookingDate}
+              style={styles.input}
+            />
+            {errors.bookingDate && (
+              <HelperText type="error">{errors.bookingDate}</HelperText>
+            )}
+            {!isFieldEditable('bookingDate', booking?.bookingDate) && (
+              <HelperText type="info">Booking date is already set and cannot be changed</HelperText>
             )}
           </Card.Content>
         </Card>
@@ -341,34 +606,14 @@ export function BookingUpdateScreen({ route }: BookingUpdateScreenProps): React.
             <DatePickerISO
               label="Expected Delivery Date"
               value={formData.expectedDeliveryDate}
-              onDateChange={(date) => handleDateChange('expectedDeliveryDate', date)}
-              error={!!errors.expectedDeliveryDate}
+              onChange={(date) => handleDateChange('expectedDeliveryDate', date)}
+              error={errors.expectedDeliveryDate}
               style={styles.input}
             />
             {errors.expectedDeliveryDate && (
               <HelperText type="error">{errors.expectedDeliveryDate}</HelperText>
             )}
 
-            <DatePickerISO
-              label="File Login Date"
-              value={formData.fileLoginDate}
-              onDateChange={(date) => handleDateChange('fileLoginDate', date)}
-              style={styles.input}
-            />
-
-            <DatePickerISO
-              label="Approval Date"
-              value={formData.approvalDate}
-              onDateChange={(date) => handleDateChange('approvalDate', date)}
-              style={styles.input}
-            />
-
-            <DatePickerISO
-              label="RTO Date"
-              value={formData.rtoDate}
-              onDateChange={(date) => handleDateChange('rtoDate', date)}
-              style={styles.input}
-            />
           </Card.Content>
         </Card>
 
@@ -409,32 +654,90 @@ export function BookingUpdateScreen({ route }: BookingUpdateScreenProps): React.
             </Text>
             
             {renderStockMenu()}
-
-            <View style={styles.switchRow}>
-              <Text variant="bodyLarge">Back Order Status</Text>
-              <Switch
-                value={formData.backOrderStatus || false}
-                onValueChange={(value) => handleBooleanChange('backOrderStatus', value)}
-              />
-            </View>
           </Card.Content>
         </Card>
 
-        {/* Advisor Remarks */}
+        {/* Remarks Section */}
         <Card style={styles.card}>
           <Card.Content>
             <Text variant="titleMedium" style={styles.cardTitle}>
-              Advisor Remarks
+              Remarks & Notes
             </Text>
+            
+            {/* Advisor Remarks - Always editable for CUSTOMER_ADVISOR */}
             <TextInput
-              label="Remarks"
+              label="Advisor Remarks"
               value={formData.advisorRemarks || ''}
               onChangeText={(value) => handleTextChange('advisorRemarks', value)}
               mode="outlined"
               multiline
-              numberOfLines={4}
+              numberOfLines={3}
+              editable={canEditRemarks('advisorRemarks')}
               style={styles.input}
             />
+            {!canEditRemarks('advisorRemarks') && (
+              <HelperText type="info">You don't have permission to edit advisor remarks</HelperText>
+            )}
+
+            {/* Team Lead Remarks */}
+            <TextInput
+              label="Team Lead Remarks"
+              value={formData.teamLeadRemarks || ''}
+              onChangeText={(value) => handleTextChange('teamLeadRemarks', value)}
+              mode="outlined"
+              multiline
+              numberOfLines={3}
+              editable={canEditRemarks('teamLeadRemarks')}
+              style={styles.input}
+            />
+            {!canEditRemarks('teamLeadRemarks') && (
+              <HelperText type="info">You don't have permission to edit team lead remarks</HelperText>
+            )}
+
+            {/* Sales Manager Remarks */}
+            <TextInput
+              label="Sales Manager Remarks"
+              value={formData.salesManagerRemarks || ''}
+              onChangeText={(value) => handleTextChange('salesManagerRemarks', value)}
+              mode="outlined"
+              multiline
+              numberOfLines={3}
+              editable={canEditRemarks('salesManagerRemarks')}
+              style={styles.input}
+            />
+            {!canEditRemarks('salesManagerRemarks') && (
+              <HelperText type="info">You don't have permission to edit sales manager remarks</HelperText>
+            )}
+
+            {/* General Manager Remarks */}
+            <TextInput
+              label="General Manager Remarks"
+              value={formData.generalManagerRemarks || ''}
+              onChangeText={(value) => handleTextChange('generalManagerRemarks', value)}
+              mode="outlined"
+              multiline
+              numberOfLines={3}
+              editable={canEditRemarks('generalManagerRemarks')}
+              style={styles.input}
+            />
+            {!canEditRemarks('generalManagerRemarks') && (
+              <HelperText type="info">You don't have permission to edit general manager remarks</HelperText>
+            )}
+
+            {/* Admin Remarks */}
+            <TextInput
+              label="Admin Remarks"
+              value={formData.adminRemarks || ''}
+              onChangeText={(value) => handleTextChange('adminRemarks', value)}
+              mode="outlined"
+              multiline
+              numberOfLines={3}
+              editable={canEditRemarks('adminRemarks')}
+              style={styles.input}
+            />
+            {!canEditRemarks('adminRemarks') && (
+              <HelperText type="info">You don't have permission to edit admin remarks</HelperText>
+            )}
           </Card.Content>
         </Card>
 
@@ -547,12 +850,6 @@ const styles = StyleSheet.create({
   input: {
     marginBottom: 8,
   },
-  switchRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 16,
-  },
   actionButtons: {
     flexDirection: 'row',
     gap: 12,
@@ -564,5 +861,32 @@ const styles = StyleSheet.create({
   },
   saveButton: {
     flex: 1,
+  },
+  restrictedContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 40,
+  },
+  restrictedTitle: {
+    textAlign: 'center',
+    marginBottom: 16,
+    color: '#EF4444',
+  },
+  restrictedMessage: {
+    textAlign: 'center',
+    marginBottom: 8,
+    color: '#374151',
+  },
+  restrictedSubMessage: {
+    textAlign: 'center',
+    marginBottom: 32,
+    color: '#6B7280',
+  },
+  switchRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 12,
   },
 });

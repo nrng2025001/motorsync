@@ -19,11 +19,10 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { theme, spacing } from '../../utils/theme';
-import { EnquiriesAPI, type Enquiry, type EnquiryStatus } from '../../api';
+import { enquiryAPI } from '../../api/enquiries';
+import { type Enquiry, EnquiryStatus, EnquiryCategory } from '../../services/types';
 import { useAuth } from '../../context/AuthContext';
 
-// Define EnquiryCategory type locally since it might not be exported from api index
-type EnquiryCategory = 'HOT' | 'LOST' | 'BOOKED';
 
 
 /**
@@ -31,13 +30,15 @@ type EnquiryCategory = 'HOT' | 'LOST' | 'BOOKED';
  */
 function getCategoryFromStatus(status: EnquiryStatus): EnquiryCategory {
   switch (status) {
-    case 'OPEN':
-    case 'IN_PROGRESS':
-      return 'HOT';
-    case 'CLOSED':
-      return 'BOOKED'; // CLOSED enquiries are successfully booked
+    case EnquiryStatus.OPEN:
+    case EnquiryStatus.CONTACTED:
+    case EnquiryStatus.QUALIFIED:
+      return EnquiryCategory.HOT;
+    case EnquiryStatus.CONVERTED:
+    case EnquiryStatus.CLOSED:
+      return EnquiryCategory.BOOKED; // CONVERTED/CLOSED enquiries are successfully booked
     default:
-      return 'HOT';
+      return EnquiryCategory.HOT;
   }
 }
 
@@ -92,11 +93,15 @@ function getCategoryColor(category: EnquiryCategory): {
  */
 function getStatusBadge(status: EnquiryStatus): { label: string; color: string } {
   switch (status) {
-    case 'OPEN':
+    case EnquiryStatus.OPEN:
       return { label: 'Open', color: '#EF4444' };
-    case 'IN_PROGRESS':
-      return { label: 'In Progress', color: '#3B82F6' };
-    case 'CLOSED':
+    case EnquiryStatus.CONTACTED:
+      return { label: 'Contacted', color: '#3B82F6' };
+    case EnquiryStatus.QUALIFIED:
+      return { label: 'Qualified', color: '#8B5CF6' };
+    case EnquiryStatus.CONVERTED:
+      return { label: 'Converted', color: '#10B981' };
+    case EnquiryStatus.CLOSED:
       return { label: 'Closed', color: '#6B7280' };
     default:
       return { label: status, color: '#6B7280' };
@@ -127,21 +132,21 @@ const CategoryPicker = ({
     bgColor: string;
   }> = [
     { 
-      value: 'HOT', 
+      value: EnquiryCategory.HOT, 
       label: 'Hot Lead', 
       emoji: '🔥',
       color: '#FF6B6B',
       bgColor: '#FFE5E5'
     },
     { 
-      value: 'LOST', 
+      value: EnquiryCategory.LOST, 
       label: 'Lost', 
       emoji: '❌',
       color: '#95A5A6',
       bgColor: '#E8E8E8'
     },
     { 
-      value: 'BOOKED', 
+      value: EnquiryCategory.BOOKED, 
       label: 'Booked', 
       emoji: '✅',
       color: '#2ECC71',
@@ -150,7 +155,7 @@ const CategoryPicker = ({
   ];
 
   const handleCategorySelect = (category: EnquiryCategory) => {
-    if (category === 'LOST' || category === 'BOOKED') {
+    if (category === EnquiryCategory.LOST || category === EnquiryCategory.BOOKED) {
       setSelectedCategory(category);
       setShowRemarksInput(true);
     } else {
@@ -268,7 +273,7 @@ export function EnquiryDetailsScreen({ route, navigation }: any): React.JSX.Elem
     
     setUpdating(true);
     try {
-      await EnquiriesAPI.updateCategory(enquiry.id, newCategory, remarks);
+      await enquiryAPI.updateCategory(enquiry.id, newCategory);
       
       // Update local state
       setEnquiry(prev => prev ? { ...prev, category: newCategory } : null);
@@ -315,22 +320,43 @@ export function EnquiryDetailsScreen({ route, navigation }: any): React.JSX.Elem
       try {
         setLoading(true);
         console.log('🚀 Calling EnquiriesAPI.getEnquiry...');
-        const response = await EnquiriesAPI.getEnquiry(enquiryId);
+        const response = await enquiryAPI.getEnquiryById(enquiryId);
         
         console.log('📦 Raw API response:', response);
         
-        // Handle response - it might be wrapped in a data property or enquiry property
-        let enquiryData = (response as any).data || response;
+        // Handle response - extract from nested structure
+        let enquiryData = (response as any).data;
+        console.log('🔍 Step 1 - response.data:', enquiryData);
+        
+        // Check if there's a nested data property first
+        if (enquiryData && enquiryData.data) {
+          console.log('🔍 Step 2a - Found nested data property, extracting...');
+          enquiryData = enquiryData.data;
+          console.log('🔍 Step 2b - After extracting data:', enquiryData);
+        }
         
         // Check if the data is nested in an 'enquiry' property
         if (enquiryData && enquiryData.enquiry) {
+          console.log('🔍 Step 3 - Found enquiry property, extracting...');
           enquiryData = enquiryData.enquiry;
+          console.log('🔍 Step 4 - Final extracted enquiry:', enquiryData);
+        } else {
+          console.log('🔍 Step 3 - No enquiry property found, using data directly');
         }
         
+        console.log('🔍 After extraction - enquiryData:', enquiryData);
+        console.log('🔍 After extraction - enquiryData.id:', enquiryData?.id);
+        
         console.log('📋 Processed enquiry data:', enquiryData);
+        console.log('🔍 Enquiry data type:', typeof enquiryData);
+        console.log('🔍 Enquiry data keys:', enquiryData ? Object.keys(enquiryData) : 'null');
+        console.log('🔍 Enquiry ID:', enquiryData?.id);
+        console.log('🔍 Enquiry ID type:', typeof enquiryData?.id);
         
         if (!enquiryData || !enquiryData.id) {
           console.error('❌ Invalid enquiry data received:', enquiryData);
+          console.error('❌ Enquiry data is null/undefined:', !enquiryData);
+          console.error('❌ Enquiry ID is missing:', !enquiryData?.id);
           setError('Invalid enquiry data received');
           return;
         }
@@ -369,22 +395,175 @@ export function EnquiryDetailsScreen({ route, navigation }: any): React.JSX.Elem
   /**
    * Update enquiry status
    */
-  const updateStatus = (newStatus: string) => {
-    Alert.alert('Status Updated', `Enquiry status updated to: ${newStatus}`);
+  const updateStatus = async (newStatus: string) => {
+    if (!enquiry) return;
+    
+    setUpdating(true);
+    try {
+      // Map display status to API status
+      const statusMap: { [key: string]: EnquiryStatus } = {
+        'Open': EnquiryStatus.OPEN,
+        'Contacted': EnquiryStatus.CONTACTED,
+        'Qualified': EnquiryStatus.QUALIFIED,
+        'Converted': EnquiryStatus.CONVERTED,
+        'Closed': EnquiryStatus.CLOSED
+      };
+      
+      const apiStatus = statusMap[newStatus] || 'OPEN';
+      
+      console.log('🔄 [EnquiryDetailsScreen] Updating status:', { newStatus, apiStatus });
+      await enquiryAPI.updateStatus(enquiry.id, apiStatus);
+      
+      // Update local state
+      setEnquiry(prev => prev ? { ...prev, status: apiStatus } : null);
+      
+      Alert.alert(
+        'Success', 
+        `Enquiry status updated to ${newStatus} successfully!`,
+        [{ text: 'OK' }]
+      );
+    } catch (error: any) {
+      console.error('❌ [EnquiryDetailsScreen] Error updating status:', error);
+      Alert.alert(
+        'Error', 
+        `Failed to update status: ${error.message || 'Please try again.'}`
+      );
+    } finally {
+      setUpdating(false);
+    }
   };
 
   /**
    * Handle add note
    */
   const handleAddNote = () => {
-    Alert.alert('Add Note', 'This would open a form to add notes to the enquiry');
+    Alert.prompt(
+      'Add Note',
+      'Enter your note for this enquiry:',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { 
+          text: 'Add Note', 
+          onPress: async (note: string | undefined) => {
+            if (!note || !note.trim()) return;
+            if (!enquiry) return;
+            
+            setUpdating(true);
+            try {
+              console.log('🔄 [EnquiryDetailsScreen] Adding note:', note);
+              await enquiryAPI.addNotes(enquiry.id, note.trim());
+              
+              // Refresh enquiry data to get updated notes
+              const response = await enquiryAPI.getEnquiryById(enquiry.id);
+              const updatedEnquiry = response.data || response;
+              setEnquiry(updatedEnquiry as Enquiry);
+              
+              Alert.alert('Success', 'Note added successfully!');
+            } catch (error: any) {
+              console.error('❌ [EnquiryDetailsScreen] Error adding note:', error);
+              Alert.alert(
+                'Error', 
+                `Failed to add note: ${error.message || 'Please try again.'}`
+              );
+            } finally {
+              setUpdating(false);
+            }
+          }
+        }
+      ],
+      'plain-text'
+    );
   };
 
   /**
    * Handle assign to staff
    */
-  const handleAssignToStaff = () => {
-    Alert.alert('Assign to Staff', 'This would open a staff selection screen');
+  const handleAssignToStaff = async () => {
+    if (!enquiry) return;
+    
+    setUpdating(true);
+    try {
+      // Get available staff members
+      const usersModule = await import('../../api/users');
+      const usersResponse = await usersModule.default.getUsers({ isActive: true });
+      const staffMembers = usersResponse.data.enquiries || []; // Using 'enquiries' as generic data key
+      
+      if (staffMembers.length === 0) {
+        Alert.alert('No Staff', 'No active staff members found.');
+        return;
+      }
+      
+      // Create staff selection options
+      const staffOptions = staffMembers.map((member: any) => ({
+        text: `${member.name} (${member.role.name})`,
+        onPress: async () => {
+          try {
+            console.log('🔄 [EnquiryDetailsScreen] Assigning enquiry to:', member.name);
+            await enquiryAPI.assignEnquiry(enquiry.id, member.firebaseUid);
+            
+            // Update local state
+            setEnquiry(prev => prev ? { 
+              ...prev, 
+              assignedToUserId: member.firebaseUid,
+              assignedToName: member.name 
+            } : null);
+            
+            Alert.alert('Success', `Enquiry assigned to ${member.name} successfully!`);
+          } catch (error: any) {
+            console.error('❌ [EnquiryDetailsScreen] Error assigning enquiry:', error);
+            Alert.alert(
+              'Error', 
+              `Failed to assign enquiry: ${error.message || 'Please try again.'}`
+            );
+          }
+        }
+      }));
+      
+      // Add unassign option if enquiry is already assigned
+      if (enquiry.assignedToUserId) {
+        staffOptions.unshift({
+          text: 'Unassign',
+          onPress: async () => {
+            try {
+              console.log('🔄 [EnquiryDetailsScreen] Unassigning enquiry');
+              await enquiryAPI.unassignEnquiry(enquiry.id);
+              
+              // Update local state
+              setEnquiry(prev => prev ? { 
+                ...prev, 
+                assignedToUserId: undefined,
+                assignedToName: undefined 
+              } : null);
+              
+              Alert.alert('Success', 'Enquiry unassigned successfully!');
+            } catch (error: any) {
+              console.error('❌ [EnquiryDetailsScreen] Error unassigning enquiry:', error);
+              Alert.alert(
+                'Error', 
+                `Failed to unassign enquiry: ${error.message || 'Please try again.'}`
+              );
+            }
+          }
+        });
+      }
+      
+      staffOptions.push({ text: 'Cancel', onPress: async () => {} });
+      
+      Alert.alert(
+        'Assign to Staff',
+        'Select a staff member to assign this enquiry to:',
+        staffOptions
+      );
+      
+    } catch (error: any) {
+      console.error('❌ [EnquiryDetailsScreen] Error fetching staff:', error);
+      Alert.alert(
+        'Error', 
+        `Failed to load staff members: ${error.message || 'Please try again.'}`
+      );
+    } finally {
+      setUpdating(false);
+    }
   };
 
   /**

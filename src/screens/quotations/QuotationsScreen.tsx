@@ -82,7 +82,7 @@ export function QuotationsScreen({ navigation }: any): React.JSX.Element {
     data: [],
   });
   
-  const userRole = state.user?.role || 'customer_advisor';
+  const userRole = state.user?.role?.name || 'CUSTOMER_ADVISOR';
   const [searchQuery, setSearchQuery] = useState('');
   const [refreshing, setRefreshing] = useState(false);
   const [filterMenuVisible, setFilterMenuVisible] = useState(false);

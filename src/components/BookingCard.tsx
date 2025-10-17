@@ -13,6 +13,7 @@ interface BookingCardProps {
   onPress?: () => void;
   onUpdate?: () => void;
   showActions?: boolean;
+  userRole?: string;
 }
 
 export function BookingCard({
@@ -20,6 +21,7 @@ export function BookingCard({
   onPress,
   onUpdate,
   showActions = true,
+  userRole = 'CUSTOMER_ADVISOR',
 }: BookingCardProps): React.JSX.Element {
   const getStatusColor = (status: BookingStatus): string => {
     switch (status) {
@@ -227,8 +229,8 @@ export function BookingCard({
           </Chip>
         )}
 
-        {/* Action Buttons */}
-        {showActions && onUpdate && (
+        {/* Action Buttons - Only for Customer Advisors */}
+        {showActions && onUpdate && userRole === 'CUSTOMER_ADVISOR' && (
           <View style={styles.actions}>
             <Button
               mode="contained"

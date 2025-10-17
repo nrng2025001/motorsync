@@ -3,7 +3,7 @@
  * Handles all booking-related API operations for advisors
  */
 
-import { apiRequest, buildQueryString } from './api.config';
+import { apiClient, handleApiCall, ApiResponse } from '../api/client';
 import {
   UpdateBookingRequest,
   Booking,
@@ -11,23 +11,64 @@ import {
   TimelineCategory,
   PaginatedBookingsResponse,
 } from './types';
+import { bookingAPI } from '../api/bookings';
 
 /**
- * Get advisor's assigned bookings
+ * Get bookings based on user role
+ * - CUSTOMER_ADVISOR: Gets only their assigned bookings
+ * - Other roles (TEAM_LEAD, SALES_MANAGER, GENERAL_MANAGER): Gets all bookings
  */
 export async function getMyBookings(
   timeline?: TimelineCategory,
-  status?: BookingStatus
+  status?: BookingStatus,
+  userRole?: string
 ): Promise<{ bookings: Booking[]; pagination: any; timeline?: string }> {
-  // Import the API class dynamically to avoid circular dependencies
-  const { BookingsAPI } = await import('../api/bookings');
+  let bookings: any[];
   
-  const bookings = await BookingsAPI.getMyBookings({
-    page: 1,
-    limit: 1000,
-    timeline,
-    status,
-  });
+  if (userRole === 'CUSTOMER_ADVISOR') {
+    // Customer advisors see only their own bookings
+    const response = await bookingAPI.getMyBookings({
+      page: 1,
+      limit: 1000,
+      status: status,
+    });
+    
+    // Extract bookings from response - handle different API response structures
+    const responseData = response.data as any;
+    if (responseData && responseData.data && responseData.data.bookings) {
+      bookings = responseData.data.bookings || [];
+    } else if (responseData && typeof responseData === 'object' && 'bookings' in responseData) {
+      bookings = responseData.bookings || [];
+    } else if (Array.isArray(responseData)) {
+      bookings = responseData;
+    } else {
+      bookings = [];
+    }
+  } else {
+    // Managers see all bookings
+    const response = await bookingAPI.getBookings({
+      page: 1,
+      limit: 1000,
+      status: status,
+    });
+    
+    // Extract bookings from response - handle different API response structures
+    const responseData = response.data as any;
+    if (responseData && responseData.data && responseData.data.bookings) {
+      bookings = responseData.data.bookings || [];
+    } else if (responseData && typeof responseData === 'object' && 'bookings' in responseData) {
+      bookings = responseData.bookings || [];
+    } else if (Array.isArray(responseData)) {
+      bookings = responseData;
+    } else {
+      bookings = [];
+    }
+  }
+  
+  // Ensure bookings is a valid array
+  if (!Array.isArray(bookings)) {
+    bookings = [];
+  }
   
   return {
     bookings: bookings as Booking[],
@@ -45,40 +86,41 @@ export async function getMyBookings(
  * Get bookings by timeline category
  */
 export async function getBookingsByTimeline(
-  timeline: TimelineCategory
+  timeline: TimelineCategory,
+  userRole?: string
 ): Promise<{ bookings: Booking[]; pagination: any }> {
-  return getMyBookings(timeline);
+  return getMyBookings(timeline, undefined, userRole);
 }
 
 /**
  * Get bookings for today
  */
-export async function getTodayBookings(): Promise<Booking[]> {
-  const response = await getBookingsByTimeline('today');
+export async function getTodayBookings(userRole?: string): Promise<Booking[]> {
+  const response = await getBookingsByTimeline('today', userRole);
   return response.bookings || [];
 }
 
 /**
  * Get bookings with delivery today
  */
-export async function getDeliveryTodayBookings(): Promise<Booking[]> {
-  const response = await getBookingsByTimeline('delivery_today');
+export async function getDeliveryTodayBookings(userRole?: string): Promise<Booking[]> {
+  const response = await getBookingsByTimeline('delivery_today', userRole);
   return response.bookings || [];
 }
 
 /**
  * Get bookings pending update (>24h old, still PENDING/ASSIGNED)
  */
-export async function getPendingUpdateBookings(): Promise<Booking[]> {
-  const response = await getBookingsByTimeline('pending_update');
+export async function getPendingUpdateBookings(userRole?: string): Promise<Booking[]> {
+  const response = await getBookingsByTimeline('pending_update', userRole);
   return response.bookings || [];
 }
 
 /**
  * Get overdue bookings (past delivery date, not delivered/cancelled)
  */
-export async function getOverdueBookings(): Promise<Booking[]> {
-  const response = await getBookingsByTimeline('overdue');
+export async function getOverdueBookings(userRole?: string): Promise<Booking[]> {
+  const response = await getBookingsByTimeline('overdue', userRole);
   return response.bookings || [];
 }
 
@@ -86,8 +128,8 @@ export async function getOverdueBookings(): Promise<Booking[]> {
  * Get single booking by ID
  */
 export async function getBookingById(id: string): Promise<Booking> {
-  const response = await apiRequest<{ booking: Booking }>(`/bookings/${id}`);
-  return response.booking;
+  const response = await bookingAPI.getBookingById(id);
+  return response.data;
 }
 
 /**
@@ -97,15 +139,8 @@ export async function updateBooking(
   id: string,
   data: UpdateBookingRequest
 ): Promise<Booking> {
-  const response = await apiRequest<{ booking: Booking }>(
-    `/bookings/${id}/update-status`,
-    {
-      method: 'PUT',
-      body: JSON.stringify(data),
-    }
-  );
-  
-  return response.booking;
+  const response = await bookingAPI.updateBookingStatus(id, data);
+  return response.data;
 }
 
 /**
@@ -115,7 +150,7 @@ export async function updateBookingStatus(
   id: string,
   status: BookingStatus
 ): Promise<Booking> {
-  return updateBooking(id, { status });
+  return updateBooking(id, { status: status as any });
 }
 
 /**

@@ -6,6 +6,7 @@ import { StatusBar } from 'expo-status-bar';
 
 import { AuthProvider } from './src/context/AuthContext';
 import { TeamProvider } from './src/context/TeamContext';
+import { DealershipProvider } from './src/context/DealershipContext';
 import { AppNavigator } from './src/navigation/AppNavigator';
 import { theme } from './src/utils/theme';
 
@@ -19,10 +20,12 @@ export default function App(): React.JSX.Element {
       <PaperProvider theme={theme}>
         <AuthProvider>
           <TeamProvider>
-            <NavigationContainer>
-              <StatusBar style="auto" />
-              <AppNavigator />
-            </NavigationContainer>
+            <DealershipProvider>
+              <NavigationContainer>
+                <StatusBar style="auto" />
+                <AppNavigator />
+              </NavigationContainer>
+            </DealershipProvider>
           </TeamProvider>
         </AuthProvider>
       </PaperProvider>

@@ -21,6 +21,8 @@ import { NotificationsScreen } from '../screens/notifications/NotificationsScree
 import { ProfileScreen } from '../screens/profile/ProfileScreen';
 import { BackendTestScreen } from '../screens/diagnostics/BackendTestScreen';
 import { StockScreen } from '../screens/stock/StockScreen';
+import { StockDetailScreen } from '../screens/stock/StockDetailScreen';
+import { AddEditStockScreen } from '../screens/stock/AddEditStockScreen';
 import { theme } from '../utils/theme';
 
 /**
@@ -53,6 +55,8 @@ export type MainStackParamList = {
   NewEnquiry: undefined;
   BackendTest: undefined;
   Stock: undefined;
+  StockDetail: { vehicleId: string };
+  AddEditStock: { vehicleId?: string };
   Bookings: undefined;
   Team: undefined;
   Quotations: undefined;
@@ -68,14 +72,21 @@ const Stack = createStackNavigator<MainStackParamList>();
  * Different roles see different tabs and features
  */
 function getTabsForRole(role: UserRole) {
-  // Clean, minimal navigation - only essential tabs
-  const baseTabs = [
-    { name: 'Dashboard' as const, icon: 'view-dashboard', label: 'Dashboard' },
-    { name: 'Enquiries' as const, icon: 'account-group', label: 'Enquiries' },
-    { name: 'AIAssistant' as const, icon: 'chat', label: 'AI Chat' },
-    { name: 'QuotationGenerator' as const, icon: 'file-plus', label: 'Generator' },
-    { name: 'Profile' as const, icon: 'account', label: 'Profile' },
+  // Base tabs for all users
+  const baseTabs: Array<{ name: keyof MainTabParamList; icon: string; label: string }> = [
+    { name: 'Dashboard', icon: 'view-dashboard', label: 'Dashboard' },
+    { name: 'Enquiries', icon: 'account-group', label: 'Enquiries' },
+    { name: 'Bookings', icon: 'calendar-check', label: 'Bookings' },
+    { name: 'Stock', icon: 'car', label: 'Stock' },
+    { name: 'Profile', icon: 'account', label: 'Profile' },
   ];
+
+  // Add role-specific tabs
+  // Users tab removed as it was causing issues
+
+  if (role === 'ADMIN') {
+    baseTabs.push({ name: 'BackendTest', icon: 'bug', label: 'Debug' });
+  }
 
   return baseTabs;
 }
@@ -85,7 +96,7 @@ function getTabsForRole(role: UserRole) {
  */
 function MainTabNavigator(): React.JSX.Element {
   const { state } = useAuth();
-  const userRole = state.user?.role || 'CUSTOMER_ADVISOR';
+  const userRole = state.user?.role?.name || 'CUSTOMER_ADVISOR';
   const tabs = getTabsForRole(userRole);
 
   return (
@@ -152,6 +163,10 @@ function getScreenComponent(tabName: string) {
       return DashboardScreen;
     case 'Enquiries':
       return EnquiriesScreen;
+    case 'Bookings':
+      return BookingsScreen;
+    case 'Stock':
+      return StockScreen;
     case 'AIAssistant':
       return AIAssistantScreen;
     case 'QuotationGenerator':
@@ -268,6 +283,20 @@ export function MainNavigator(): React.JSX.Element {
       <Stack.Screen 
         name="AIAssistant" 
         component={AIAssistantScreen}
+        options={{
+          headerShown: false,
+        }}
+      />
+      <Stack.Screen 
+        name="StockDetail" 
+        component={StockDetailScreen}
+        options={{
+          headerShown: false,
+        }}
+      />
+      <Stack.Screen 
+        name="AddEditStock" 
+        component={AddEditStockScreen}
         options={{
           headerShown: false,
         }}

@@ -104,9 +104,20 @@ export class StockAPI {
    * Get stock list with filters and pagination
    */
   static async getStock(params: StockListParams = {}): Promise<PaginatedResponse<Stock>> {
-    return handleApiCall(() =>
-      apiClient.get<ApiResponse<PaginatedResponse<Stock>>>('/stock', { params })
+    const response = await handleApiCall(() =>
+      apiClient.get<ApiResponse<{ vehicles: Stock[]; pagination: any }>>('/stock', { params })
     );
+    
+    // Production backend returns: { success: true, message: "...", data: { vehicles: [...], pagination: {...} } }
+    // handleApiCall extracts the data field, so response = { vehicles: [...], pagination: {...} }
+    return {
+      success: true,
+      message: 'Stock retrieved successfully',
+      data: {
+        enquiries: response.vehicles || [],
+        pagination: response.pagination || { page: 1, limit: 20, total: 0, totalPages: 0 }
+      }
+    };
   }
 
   /**
@@ -119,12 +130,26 @@ export class StockAPI {
   }
 
   /**
+   * Get vehicle by ID (alias for getStockById for compatibility)
+   */
+  static async getVehicleById(id: string): Promise<Stock> {
+    return this.getStockById(id);
+  }
+
+  /**
    * Create new stock entry
    */
   static async createStock(stockData: CreateStockRequest): Promise<Stock> {
     return handleApiCall(() =>
       apiClient.post<ApiResponse<Stock>>('/stock', stockData)
     );
+  }
+
+  /**
+   * Create vehicle (alias for createStock for compatibility)
+   */
+  static async createVehicle(vehicleData: CreateStockRequest): Promise<Stock> {
+    return this.createStock(vehicleData);
   }
 
   /**
