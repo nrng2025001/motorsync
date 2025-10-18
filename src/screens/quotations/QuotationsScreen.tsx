@@ -20,6 +20,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { useAuth } from '../../context/AuthContext';
+import { getUserRole } from '../../utils/roleUtils';
 import { theme, spacing } from '../../utils/theme';
 import { QuotationsAPI, type Quotation, type QuotationStatus } from '../../api';
 
@@ -82,7 +83,7 @@ export function QuotationsScreen({ navigation }: any): React.JSX.Element {
     data: [],
   });
   
-  const userRole = state.user?.role?.name || 'CUSTOMER_ADVISOR';
+  const userRole = getUserRole(state.user);
   const [searchQuery, setSearchQuery] = useState('');
   const [refreshing, setRefreshing] = useState(false);
   const [filterMenuVisible, setFilterMenuVisible] = useState(false);

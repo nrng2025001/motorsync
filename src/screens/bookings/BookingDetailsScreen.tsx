@@ -22,6 +22,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { theme, spacing } from '../../utils/theme';
 import { useAuth } from '../../context/AuthContext';
+import { getUserRole } from '../../utils/roleUtils';
 import { bookingAPI } from '../../api/bookings';
 import { type Booking, BookingStatus } from '../../services/types';
 
@@ -43,7 +44,7 @@ const remarksFieldMap: Record<string, keyof Booking> = {
 export function BookingDetailsScreen({ route, navigation }: any): React.JSX.Element {
   const { bookingId } = route?.params || {};
   const { state: authState } = useAuth();
-  const userRole = authState.user?.role?.name || 'CUSTOMER_ADVISOR';
+  const userRole = getUserRole(authState.user);
   
   const [booking, setBooking] = useState<Booking | null>(null);
   const [loading, setLoading] = useState(true);
