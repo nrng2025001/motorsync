@@ -20,6 +20,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { useAuth, getRoleDisplayName } from '../../context/AuthContext';
+import { getUserRole } from '../../utils/roleUtils';
 import { useTeam, type TeamMember, canManageTeam } from '../../context/TeamContext';
 import { theme, spacing } from '../../utils/theme';
 import { formatCurrency } from '../../utils/formatting';
@@ -34,7 +35,7 @@ export function TeamScreen({ navigation }: any): React.JSX.Element {
   const [refreshing, setRefreshing] = useState(false);
 
   const currentUser = state.user;
-  const canManage = canManageTeam(currentUser?.role?.name || 'CUSTOMER_ADVISOR');
+  const canManage = canManageTeam(getUserRole(currentUser));
 
   // Get team data
   const teamHierarchy = currentUser ? getTeamHierarchy(currentUser.firebaseUid) : null;
@@ -117,7 +118,7 @@ export function TeamScreen({ navigation }: any): React.JSX.Element {
             My Team
           </Text>
           <Text variant="bodyMedium" style={styles.headerSubtitle}>
-            {getRoleDisplayName(currentUser?.role?.name || 'CUSTOMER_ADVISOR')}
+            {getRoleDisplayName(getUserRole(currentUser))}
           </Text>
         </View>
 
