@@ -78,8 +78,9 @@ export function BookingUpdateScreen({ route }: BookingUpdateScreenProps): React.
   
   const userRole = getUserRole(authState.user);
 
-  // Restrict access to only Customer Advisors
-  if (userRole !== 'CUSTOMER_ADVISOR') {
+  // Allow access to Customer Advisors and higher-level roles for remarks
+  const allowedRoles = ['CUSTOMER_ADVISOR', 'TEAM_LEAD', 'SALES_MANAGER', 'GENERAL_MANAGER', 'ADMIN'];
+  if (!allowedRoles.includes(userRole)) {
     return (
       <SafeAreaView style={styles.container}>
         <View style={styles.restrictedContainer}>
@@ -87,10 +88,10 @@ export function BookingUpdateScreen({ route }: BookingUpdateScreenProps): React.
             Access Restricted
           </Text>
           <Text variant="bodyLarge" style={styles.restrictedMessage}>
-            Only Customer Advisors can update booking details.
+            You don't have permission to access this screen.
           </Text>
           <Text variant="bodyMedium" style={styles.restrictedSubMessage}>
-            You can view booking details and add remarks only.
+            Contact your administrator for access.
           </Text>
           <Button 
             mode="contained" 
@@ -114,12 +115,18 @@ export function BookingUpdateScreen({ route }: BookingUpdateScreenProps): React.
   const isFieldEditable = (fieldName: keyof Booking, currentValue: any): boolean => {
     if (!booking) return false;
     
-    // If field is empty/null, it's editable
-    if (!currentValue || currentValue === '' || currentValue === null) {
+    // Customer Advisors can edit ALL booking fields
+    if (userRole === 'CUSTOMER_ADVISOR') {
       return true;
     }
     
-    // If field has value, it's read-only
+    // Higher-level roles (Team Lead, Sales Manager, General Manager, Admin) can ONLY edit their respective remarks
+    const remarksFields = ['advisorRemarks', 'teamLeadRemarks', 'salesManagerRemarks', 'generalManagerRemarks', 'adminRemarks'];
+    if (remarksFields.includes(fieldName as string)) {
+      return canEditRemarks(fieldName as string);
+    }
+    
+    // ALL other fields are strictly read-only for higher-level roles
     return false;
   };
 
@@ -127,10 +134,10 @@ export function BookingUpdateScreen({ route }: BookingUpdateScreenProps): React.
   const canEditRemarks = (remarksType: string): boolean => {
     const rolePermissions: Record<string, string[]> = {
       'CUSTOMER_ADVISOR': ['advisorRemarks'],
-      'TEAM_LEAD': ['advisorRemarks', 'teamLeadRemarks'],
-      'SALES_MANAGER': ['advisorRemarks', 'teamLeadRemarks', 'salesManagerRemarks'],
-      'GENERAL_MANAGER': ['advisorRemarks', 'teamLeadRemarks', 'salesManagerRemarks', 'generalManagerRemarks'],
-      'ADMIN': ['advisorRemarks', 'teamLeadRemarks', 'salesManagerRemarks', 'generalManagerRemarks', 'adminRemarks'],
+      'TEAM_LEAD': ['teamLeadRemarks'],
+      'SALES_MANAGER': ['salesManagerRemarks'],
+      'GENERAL_MANAGER': ['generalManagerRemarks'],
+      'ADMIN': ['adminRemarks'],
     };
     
     return rolePermissions[userRole]?.includes(remarksType) || false;
@@ -153,6 +160,13 @@ export function BookingUpdateScreen({ route }: BookingUpdateScreenProps): React.
     stockAvailability?: string;
     financeRequired?: boolean;
     financerName?: string;
+    dealerCode?: string;
+    zone?: string;
+    region?: string;
+    fileLoginDate?: string;
+    approvalDate?: string;
+    backOrderStatus?: boolean;
+    rtoDate?: string;
     advisorRemarks?: string;
     teamLeadRemarks?: string;
     salesManagerRemarks?: string;
@@ -179,9 +193,21 @@ export function BookingUpdateScreen({ route }: BookingUpdateScreenProps): React.
       setLoading(true);
       const response = await bookingAPI.getBookingById(bookingId);
       
+      console.log('🔍 [BookingUpdateScreen] Raw API response:', response);
+      console.log('🔍 [BookingUpdateScreen] Response data:', response.data);
+      
       // Handle nested response structure: {data: {data: {booking: {...}}}}
       const responseData = response.data as any;
       const bookingData = responseData?.data?.booking || responseData?.booking || responseData;
+      
+      console.log('🔍 [BookingUpdateScreen] Extracted booking data:', bookingData);
+      console.log('🔍 [BookingUpdateScreen] Booking remarks:', {
+        advisorRemarks: bookingData?.advisorRemarks,
+        teamLeadRemarks: bookingData?.teamLeadRemarks,
+        salesManagerRemarks: bookingData?.salesManagerRemarks,
+        generalManagerRemarks: bookingData?.generalManagerRemarks,
+        adminRemarks: bookingData?.adminRemarks,
+      });
       
       setBooking(bookingData);
       initializeFormData(bookingData);
@@ -194,6 +220,15 @@ export function BookingUpdateScreen({ route }: BookingUpdateScreenProps): React.
   };
 
   const initializeFormData = (bookingData: Booking) => {
+    console.log('🔍 [BookingUpdateScreen] Initializing form data with booking:', bookingData);
+    console.log('🔍 [BookingUpdateScreen] Remarks data:', {
+      advisorRemarks: bookingData.advisorRemarks,
+      teamLeadRemarks: bookingData.teamLeadRemarks,
+      salesManagerRemarks: bookingData.salesManagerRemarks,
+      generalManagerRemarks: bookingData.generalManagerRemarks,
+      adminRemarks: bookingData.adminRemarks,
+    });
+    
     setFormData({
       customerName: bookingData.customerName || '',
       customerPhone: bookingData.customerPhone || '',
@@ -210,6 +245,13 @@ export function BookingUpdateScreen({ route }: BookingUpdateScreenProps): React.
       stockAvailability: bookingData.stockAvailability,
       financeRequired: bookingData.financeRequired,
       financerName: bookingData.financerName || '',
+      dealerCode: bookingData.dealerCode || '',
+      zone: bookingData.zone || '',
+      region: bookingData.region || '',
+      fileLoginDate: bookingData.fileLoginDate || '',
+      approvalDate: bookingData.approvalDate || '',
+      backOrderStatus: bookingData.backOrderStatus || false,
+      rtoDate: bookingData.rtoDate || '',
       advisorRemarks: bookingData.advisorRemarks || '',
       teamLeadRemarks: bookingData.teamLeadRemarks || '',
       salesManagerRemarks: bookingData.salesManagerRemarks || '',
@@ -222,44 +264,57 @@ export function BookingUpdateScreen({ route }: BookingUpdateScreenProps): React.
   const validateForm = (): boolean => {
     const newErrors: Record<string, string> = {};
 
-    // Required fields validation
-    if (!formData.customerName?.trim()) {
-      newErrors.customerName = 'Customer name is required';
-    }
-
-    if (!formData.customerPhone?.trim()) {
-      newErrors.customerPhone = 'Customer phone is required';
-    }
-
-    if (!formData.variant?.trim()) {
-      newErrors.variant = 'Vehicle variant is required';
-    }
-
-    // Date validation
-    if (formData.expectedDeliveryDate) {
-      const deliveryDate = new Date(formData.expectedDeliveryDate);
-      const today = new Date();
-      if (deliveryDate < today) {
-        newErrors.expectedDeliveryDate = 'Delivery date cannot be in the past';
+    if (userRole === 'CUSTOMER_ADVISOR') {
+      // Customer Advisors - validate all booking fields
+      if (!formData.customerName?.trim()) {
+        newErrors.customerName = 'Customer name is required';
       }
-    }
 
-    if (formData.bookingDate) {
-      const bookingDate = new Date(formData.bookingDate);
-      const today = new Date();
-      if (bookingDate > today) {
-        newErrors.bookingDate = 'Booking date cannot be in the future';
+      if (!formData.customerPhone?.trim()) {
+        newErrors.customerPhone = 'Customer phone is required';
       }
-    }
 
-    // Finance validation
-    if (formData.financeRequired && !formData.financerName?.trim()) {
-      newErrors.financerName = 'Financer name is required when finance is needed';
-    }
+      if (!formData.variant?.trim()) {
+        newErrors.variant = 'Vehicle variant is required';
+      }
 
-    // Email validation
-    if (formData.customerEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.customerEmail)) {
-      newErrors.customerEmail = 'Please enter a valid email address';
+      // Date validation
+      if (formData.expectedDeliveryDate) {
+        const deliveryDate = new Date(formData.expectedDeliveryDate);
+        const today = new Date();
+        if (deliveryDate < today) {
+          newErrors.expectedDeliveryDate = 'Delivery date cannot be in the past';
+        }
+      }
+
+      if (formData.bookingDate) {
+        const bookingDate = new Date(formData.bookingDate);
+        const today = new Date();
+        if (bookingDate > today) {
+          newErrors.bookingDate = 'Booking date cannot be in the future';
+        }
+      }
+
+      // Finance validation
+      if (formData.financeRequired && !formData.financerName?.trim()) {
+        newErrors.financerName = 'Financer name is required when finance is needed';
+      }
+
+      // Email validation
+      if (formData.customerEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.customerEmail)) {
+        newErrors.customerEmail = 'Please enter a valid email address';
+      }
+    } else {
+      // Higher-level roles - only validate their remarks field
+      const remarksFields = ['advisorRemarks', 'teamLeadRemarks', 'salesManagerRemarks', 'generalManagerRemarks', 'adminRemarks'];
+      const allowedField = remarksFields.find(field => canEditRemarks(field));
+      
+      if (allowedField && formData[allowedField as keyof typeof formData]) {
+        const remarksValue = formData[allowedField as keyof typeof formData];
+        if (remarksValue && remarksValue.toString().trim().length > 500) {
+          newErrors[allowedField] = 'Remarks cannot exceed 500 characters';
+        }
+      }
     }
 
     setErrors(newErrors);
@@ -276,15 +331,27 @@ export function BookingUpdateScreen({ route }: BookingUpdateScreenProps): React.
     try {
       setUpdating(true);
       
-      // Filter out undefined values and format dates
-      const updateData = Object.fromEntries(
-        Object.entries(formData).filter(([_, value]) => value !== undefined)
-      );
+      let updateData: any = {};
       
-      // Format expectedDeliveryDate as YYYY-MM-DD if present
-      if (updateData.expectedDeliveryDate && typeof updateData.expectedDeliveryDate === 'string') {
-        const date = new Date(updateData.expectedDeliveryDate);
-        updateData.expectedDeliveryDate = date.toISOString().split('T')[0];
+      if (userRole === 'CUSTOMER_ADVISOR') {
+        // Customer Advisors can update all fields
+        updateData = Object.fromEntries(
+          Object.entries(formData).filter(([_, value]) => value !== undefined)
+        );
+        
+        // Format expectedDeliveryDate as YYYY-MM-DD if present
+        if (updateData.expectedDeliveryDate && typeof updateData.expectedDeliveryDate === 'string') {
+          const date = new Date(updateData.expectedDeliveryDate);
+          updateData.expectedDeliveryDate = date.toISOString().split('T')[0];
+        }
+      } else {
+        // Higher-level roles can only update their respective remarks
+        const remarksFields = ['advisorRemarks', 'teamLeadRemarks', 'salesManagerRemarks', 'generalManagerRemarks', 'adminRemarks'];
+        const allowedField = remarksFields.find(field => canEditRemarks(field));
+        
+        if (allowedField && formData[allowedField as keyof typeof formData]) {
+          updateData[allowedField] = formData[allowedField as keyof typeof formData];
+        }
       }
 
       // Use the comprehensive updateBooking API
@@ -292,7 +359,7 @@ export function BookingUpdateScreen({ route }: BookingUpdateScreenProps): React.
       
       Alert.alert(
         'Success',
-        'Booking updated successfully!',
+        userRole === 'CUSTOMER_ADVISOR' ? 'Booking updated successfully!' : 'Remarks added successfully!',
         [
           {
             text: 'OK',
@@ -343,10 +410,10 @@ export function BookingUpdateScreen({ route }: BookingUpdateScreenProps): React.
           value={STATUS_OPTIONS.find(opt => opt.value === formData.status)?.label || ''}
           editable={false}
           mode="outlined"
-          right={<TextInput.Icon icon="chevron-down" onPress={() => setStatusMenuVisible(true)} />}
-          onPressIn={() => setStatusMenuVisible(true)}
+          right={isFieldEditable('status', formData.status) ? <TextInput.Icon icon="chevron-down" onPress={() => setStatusMenuVisible(true)} /> : null}
+          onPressIn={isFieldEditable('status', formData.status) ? () => setStatusMenuVisible(true) : undefined}
           error={!!errors.status}
-          style={styles.input}
+          style={[styles.input, !isFieldEditable('status', formData.status) && styles.disabledInput]}
         />
       }
     >
@@ -375,9 +442,9 @@ export function BookingUpdateScreen({ route }: BookingUpdateScreenProps): React.
           value={STOCK_OPTIONS.find(opt => opt.value === formData.stockAvailability)?.label || ''}
           editable={false}
           mode="outlined"
-          right={<TextInput.Icon icon="chevron-down" onPress={() => setStockMenuVisible(true)} />}
-          onPressIn={() => setStockMenuVisible(true)}
-          style={styles.input}
+          right={isFieldEditable('stockAvailability', formData.stockAvailability) ? <TextInput.Icon icon="chevron-down" onPress={() => setStockMenuVisible(true)} /> : null}
+          onPressIn={isFieldEditable('stockAvailability', formData.stockAvailability) ? () => setStockMenuVisible(true) : undefined}
+          style={[styles.input, !isFieldEditable('stockAvailability', formData.stockAvailability) && styles.disabledInput]}
         />
       }
     >
@@ -560,6 +627,51 @@ export function BookingUpdateScreen({ route }: BookingUpdateScreenProps): React.
           </Card.Content>
         </Card>
 
+        {/* Dealer Information */}
+        <Card style={styles.card}>
+          <Card.Content>
+            <Text variant="titleMedium" style={styles.cardTitle}>
+              Dealer Information
+            </Text>
+            
+            <TextInput
+              label="Dealer Code"
+              value={formData.dealerCode || ''}
+              onChangeText={(value) => handleTextChange('dealerCode', value)}
+              mode="outlined"
+              editable={isFieldEditable('dealerCode', formData.dealerCode)}
+              style={styles.input}
+            />
+            {!isFieldEditable('dealerCode', formData.dealerCode) && (
+              <HelperText type="info">Dealer code is already set and cannot be changed</HelperText>
+            )}
+
+            <TextInput
+              label="Zone"
+              value={formData.zone || ''}
+              onChangeText={(value) => handleTextChange('zone', value)}
+              mode="outlined"
+              editable={isFieldEditable('zone', formData.zone)}
+              style={styles.input}
+            />
+            {!isFieldEditable('zone', formData.zone) && (
+              <HelperText type="info">Zone is already set and cannot be changed</HelperText>
+            )}
+
+            <TextInput
+              label="Region"
+              value={formData.region || ''}
+              onChangeText={(value) => handleTextChange('region', value)}
+              mode="outlined"
+              editable={isFieldEditable('region', formData.region)}
+              style={styles.input}
+            />
+            {!isFieldEditable('region', formData.region) && (
+              <HelperText type="info">Region is already set and cannot be changed</HelperText>
+            )}
+          </Card.Content>
+        </Card>
+
         {/* Booking Information */}
         <Card style={styles.card}>
           <Card.Content>
@@ -584,6 +696,7 @@ export function BookingUpdateScreen({ route }: BookingUpdateScreenProps): React.
               value={formData.bookingDate}
               onChange={(date) => handleDateChange('bookingDate', date)}
               error={errors.bookingDate}
+              disabled={!isFieldEditable('bookingDate', formData.bookingDate)}
               style={styles.input}
             />
             {errors.bookingDate && (
@@ -609,6 +722,7 @@ export function BookingUpdateScreen({ route }: BookingUpdateScreenProps): React.
               value={formData.expectedDeliveryDate}
               onChange={(date) => handleDateChange('expectedDeliveryDate', date)}
               error={errors.expectedDeliveryDate}
+              disabled={!isFieldEditable('expectedDeliveryDate', formData.expectedDeliveryDate)}
               style={styles.input}
             />
             {errors.expectedDeliveryDate && (
@@ -630,6 +744,7 @@ export function BookingUpdateScreen({ route }: BookingUpdateScreenProps): React.
               <Switch
                 value={formData.financeRequired || false}
                 onValueChange={(value) => handleBooleanChange('financeRequired', value)}
+                disabled={!isFieldEditable('financeRequired', formData.financeRequired)}
               />
             </View>
 
@@ -658,6 +773,45 @@ export function BookingUpdateScreen({ route }: BookingUpdateScreenProps): React.
           </Card.Content>
         </Card>
 
+        {/* Additional Information */}
+        <Card style={styles.card}>
+          <Card.Content>
+            <Text variant="titleMedium" style={styles.cardTitle}>
+              Additional Information
+            </Text>
+            
+            <DatePickerISO
+              label="File Login Date"
+              value={formData.fileLoginDate}
+              onChange={(date) => handleDateChange('fileLoginDate', date)}
+              style={styles.input}
+            />
+
+            <DatePickerISO
+              label="Approval Date"
+              value={formData.approvalDate}
+              onChange={(date) => handleDateChange('approvalDate', date)}
+              style={styles.input}
+            />
+
+            <DatePickerISO
+              label="RTO Date"
+              value={formData.rtoDate}
+              onChange={(date) => handleDateChange('rtoDate', date)}
+              style={styles.input}
+            />
+
+            <View style={styles.switchRow}>
+              <Text variant="bodyLarge">Back Order Status</Text>
+              <Switch
+                value={formData.backOrderStatus || false}
+                onValueChange={(value) => handleBooleanChange('backOrderStatus', value)}
+                disabled={!isFieldEditable('backOrderStatus', formData.backOrderStatus)}
+              />
+            </View>
+          </Card.Content>
+        </Card>
+
         {/* Remarks Section */}
         <Card style={styles.card}>
           <Card.Content>
@@ -665,9 +819,22 @@ export function BookingUpdateScreen({ route }: BookingUpdateScreenProps): React.
               Remarks & Notes
             </Text>
             
+            {/* Debug info */}
+            {__DEV__ && (
+              <Text style={{ fontSize: 10, color: '#666', marginBottom: 10 }}>
+                Debug - Form Data Remarks: {JSON.stringify({
+                  advisorRemarks: formData.advisorRemarks,
+                  teamLeadRemarks: formData.teamLeadRemarks,
+                  salesManagerRemarks: formData.salesManagerRemarks,
+                  generalManagerRemarks: formData.generalManagerRemarks,
+                  adminRemarks: formData.adminRemarks,
+                })}
+              </Text>
+            )}
+            
             {/* Advisor Remarks - Always editable for CUSTOMER_ADVISOR */}
             <TextInput
-              label="Advisor Remarks"
+              label={`Advisor Remarks ${formData.advisorRemarks ? `(${formData.advisorRemarks.length} chars)` : '(empty)'}`}
               value={formData.advisorRemarks || ''}
               onChangeText={(value) => handleTextChange('advisorRemarks', value)}
               mode="outlined"
@@ -677,12 +844,12 @@ export function BookingUpdateScreen({ route }: BookingUpdateScreenProps): React.
               style={styles.input}
             />
             {!canEditRemarks('advisorRemarks') && (
-              <HelperText type="info">You don't have permission to edit advisor remarks</HelperText>
+              <HelperText type="info">Only Customer Advisors can edit advisor remarks</HelperText>
             )}
 
             {/* Team Lead Remarks */}
             <TextInput
-              label="Team Lead Remarks"
+              label={`Team Lead Remarks ${formData.teamLeadRemarks ? `(${formData.teamLeadRemarks.length} chars)` : '(empty)'}`}
               value={formData.teamLeadRemarks || ''}
               onChangeText={(value) => handleTextChange('teamLeadRemarks', value)}
               mode="outlined"
@@ -692,12 +859,12 @@ export function BookingUpdateScreen({ route }: BookingUpdateScreenProps): React.
               style={styles.input}
             />
             {!canEditRemarks('teamLeadRemarks') && (
-              <HelperText type="info">You don't have permission to edit team lead remarks</HelperText>
+              <HelperText type="info">Only Team Leads can edit team lead remarks</HelperText>
             )}
 
             {/* Sales Manager Remarks */}
             <TextInput
-              label="Sales Manager Remarks"
+              label={`Sales Manager Remarks ${formData.salesManagerRemarks ? `(${formData.salesManagerRemarks.length} chars)` : '(empty)'}`}
               value={formData.salesManagerRemarks || ''}
               onChangeText={(value) => handleTextChange('salesManagerRemarks', value)}
               mode="outlined"
@@ -707,12 +874,12 @@ export function BookingUpdateScreen({ route }: BookingUpdateScreenProps): React.
               style={styles.input}
             />
             {!canEditRemarks('salesManagerRemarks') && (
-              <HelperText type="info">You don't have permission to edit sales manager remarks</HelperText>
+              <HelperText type="info">Only Sales Managers can edit sales manager remarks</HelperText>
             )}
 
             {/* General Manager Remarks */}
             <TextInput
-              label="General Manager Remarks"
+              label={`General Manager Remarks ${formData.generalManagerRemarks ? `(${formData.generalManagerRemarks.length} chars)` : '(empty)'}`}
               value={formData.generalManagerRemarks || ''}
               onChangeText={(value) => handleTextChange('generalManagerRemarks', value)}
               mode="outlined"
@@ -722,12 +889,12 @@ export function BookingUpdateScreen({ route }: BookingUpdateScreenProps): React.
               style={styles.input}
             />
             {!canEditRemarks('generalManagerRemarks') && (
-              <HelperText type="info">You don't have permission to edit general manager remarks</HelperText>
+              <HelperText type="info">Only General Managers can edit general manager remarks</HelperText>
             )}
 
             {/* Admin Remarks */}
             <TextInput
-              label="Admin Remarks"
+              label={`Admin Remarks ${formData.adminRemarks ? `(${formData.adminRemarks.length} chars)` : '(empty)'}`}
               value={formData.adminRemarks || ''}
               onChangeText={(value) => handleTextChange('adminRemarks', value)}
               mode="outlined"
@@ -737,7 +904,7 @@ export function BookingUpdateScreen({ route }: BookingUpdateScreenProps): React.
               style={styles.input}
             />
             {!canEditRemarks('adminRemarks') && (
-              <HelperText type="info">You don't have permission to edit admin remarks</HelperText>
+              <HelperText type="info">Only Admins can edit admin remarks</HelperText>
             )}
           </Card.Content>
         </Card>
@@ -850,6 +1017,10 @@ const styles = StyleSheet.create({
   },
   input: {
     marginBottom: 8,
+  },
+  disabledInput: {
+    backgroundColor: '#F3F4F6',
+    opacity: 0.6,
   },
   actionButtons: {
     flexDirection: 'row',

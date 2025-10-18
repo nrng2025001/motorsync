@@ -29,27 +29,27 @@ class EnquiryAPI {
 
 
   async createEnquiry(data: {
-    customerName: string;
-    customerContact: string;
-    customerEmail?: string;
-    variant?: string;
-    color?: string;
-    expectedBookingDate?: string;
-    caRemarks?: string;
+  customerName: string;
+  customerContact: string;
+  customerEmail?: string;
+  variant?: string;
+  color?: string;
+  expectedBookingDate?: string;
+  caRemarks?: string;
   }): Promise<ApiResponse<Enquiry>> {
     return apiClient.post('/enquiries', data);
-  }
+}
 
   async updateEnquiry(id: string, data: {
-    customerName?: string;
-    customerContact?: string;
-    customerEmail?: string;
-    variant?: string;
-    color?: string;
+  customerName?: string;
+  customerContact?: string;
+  customerEmail?: string;
+  variant?: string;
+  color?: string;
     expectedBookingDate?: string;
-    status?: EnquiryStatus;
+  status?: EnquiryStatus;
     category?: EnquiryCategory;
-    caRemarks?: string;
+  caRemarks?: string;
     gmRemarks?: string;
     assignedToUserId?: string;
   }): Promise<ApiResponse<Enquiry>> {
@@ -61,7 +61,7 @@ class EnquiryAPI {
   }
 
   async getEnquiryStats(): Promise<ApiResponse<{
-    total: number;
+  total: number;
     byStatus: Record<string, number>;
     byCategory: Record<string, number>;
   }>> {
@@ -191,7 +191,7 @@ class EnquiryAPI {
     if (filters?.sortOrder) queryParams.append('sortOrder', filters.sortOrder);
 
     const response = await apiClient.get(`/enquiries/export?${queryParams.toString()}`, {
-      responseType: 'blob'
+        responseType: 'blob'
     });
     
     return response.data;

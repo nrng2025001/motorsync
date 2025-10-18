@@ -1,6 +1,6 @@
 /**
- * Bookings Screen with Timeline Tabs
- * Displays bookings organized by timeline categories
+ * Bookings Screen with Status Filter
+ * Displays bookings filtered by status categories
  */
 
 import React, { useState, useEffect, useCallback } from 'react';
@@ -32,6 +32,8 @@ import { Booking, TimelineCategory } from '../../services/types';
 import { MainStackParamList } from '../../navigation/MainNavigator';
 import { theme, spacing, shadows, borderRadius } from '../../utils/theme';
 import { useAuth } from '../../context/AuthContext';
+import { getUserRole } from '../../utils/roleUtils';
+import { getDataFilterOptions, canSeeUserData, getRoleDisplayNameWithHierarchy, filterBookingsByHierarchy } from '../../utils/hierarchyUtils';
 
 const { width, height } = Dimensions.get('window');
 
@@ -88,15 +90,17 @@ const BackgroundPattern = () => (
   </View>
 );
 
-type TimelineTab = 'all' | TimelineCategory;
 type StatusFilter = 'all' | 'pending' | 'retailed' | 'cancelled';
 
 export function BookingsScreen(): React.JSX.Element {
   const navigation = useNavigation<NavigationProp>();
   const { state: authState } = useAuth();
 
+  // Get user role and hierarchical permissions
+  const userRole = getUserRole(authState.user);
+  const dataFilterOptions = getDataFilterOptions(userRole);
+
   // State
-  const [selectedTimeline, setSelectedTimeline] = useState<TimelineTab>('all');
   const [selectedStatus, setSelectedStatus] = useState<StatusFilter>('all');
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [loading, setLoading] = useState(true);
@@ -109,16 +113,27 @@ export function BookingsScreen(): React.JSX.Element {
     try {
       if (showLoading) setLoading(true);
       
-      const timeline = selectedTimeline === 'all' ? undefined : selectedTimeline;
-      const response = await BookingService.getMyBookings(timeline, undefined, authState.user?.role?.name);
+      const response = await BookingService.getMyBookings(undefined, undefined, userRole);
       
       // Ensure we have a valid bookings array
-      const bookingsArray = response.bookings || [];
+      let bookingsArray = response.bookings || [];
       if (!Array.isArray(bookingsArray)) {
-        setBookings([]);
-      } else {
-        setBookings(bookingsArray);
+        bookingsArray = [];
       }
+      
+      // Apply hierarchical filtering for managers
+      if (['TEAM_LEAD', 'SALES_MANAGER', 'GENERAL_MANAGER'].includes(userRole)) {
+        // For now, we'll use a simplified approach since we don't have all users loaded
+        // In a real implementation, you'd fetch all users and filter based on hierarchy
+        const currentUserId = authState.user?.firebaseUid || authState.user?.id;
+        
+        // Filter bookings based on hierarchy
+        if (currentUserId) {
+          bookingsArray = filterBookingsByHierarchy(bookingsArray, userRole, currentUserId, []);
+        }
+      }
+      
+      setBookings(bookingsArray);
     } catch (error: any) {
       console.error('Error fetching bookings:', error);
       setSnackbar({
@@ -129,7 +144,7 @@ export function BookingsScreen(): React.JSX.Element {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [selectedTimeline, authState.user?.role]);
+  }, [authState.user?.role, authState.user?.firebaseUid, authState.user?.id, userRole]);
 
   // Initial load and timeline change
   useEffect(() => {
@@ -183,30 +198,18 @@ export function BookingsScreen(): React.JSX.Element {
   });
 
 
-  // Timeline stats
-  const getTimelineStats = () => {
-    const today = new Date();
-    const todayStr = today.toISOString().split('T')[0];
-    
+  // Basic stats
+  const getStats = () => {
     return {
       all: bookings.length,
-      today: bookings.filter(b => b.bookingDate && b.bookingDate.startsWith(todayStr)).length,
-      delivery_today: bookings.filter(b => b.expectedDeliveryDate && b.expectedDeliveryDate.startsWith(todayStr)).length,
-      pending_update: bookings.filter(b => {
-        const bookingDate = new Date(b.bookingDate);
-        const hoursDiff = (today.getTime() - bookingDate.getTime()) / (1000 * 60 * 60);
-        return hoursDiff > 24 && (b.status === 'PENDING' || b.status === 'ASSIGNED');
-      }).length,
-      overdue: bookings.filter(b => {
-        if (!b.expectedDeliveryDate) return false;
-        const deliveryDate = new Date(b.expectedDeliveryDate);
-        return deliveryDate < today && !['DELIVERED', 'CANCELLED'].includes(b.status);
-      }).length,
+      pending: bookings.filter(b => ['PENDING', 'ASSIGNED', 'IN_PROGRESS', 'CONFIRMED', 'APPROVED'].includes(b.status)).length,
+      retailed: bookings.filter(b => b.status === 'DELIVERED').length,
+      cancelled: bookings.filter(b => ['CANCELLED', 'REJECTED', 'NO_SHOW'].includes(b.status)).length,
     };
   };
 
   const renderStatsBar = () => {
-    const stats = getTimelineStats();
+    const stats = getStats();
     
     return (
       <View style={styles.statsBar}>
@@ -216,75 +219,29 @@ export function BookingsScreen(): React.JSX.Element {
         </View>
         <View style={styles.statDivider} />
         <View style={styles.statItem}>
-          <Text style={[styles.statValue, { color: '#3B82F6' }]}>
-            {stats.today}
-          </Text>
-          <Text style={styles.statLabel}>Today</Text>
-        </View>
-        <View style={styles.statDivider} />
-        <View style={styles.statItem}>
-          <Text style={[styles.statValue, { color: '#10B981' }]}>
-            {stats.delivery_today}
-          </Text>
-          <Text style={styles.statLabel}>Delivery</Text>
-        </View>
-        <View style={styles.statDivider} />
-        <View style={styles.statItem}>
           <Text style={[styles.statValue, { color: '#F59E0B' }]}>
-            {stats.pending_update}
+            {stats.pending}
           </Text>
           <Text style={styles.statLabel}>Pending</Text>
         </View>
         <View style={styles.statDivider} />
         <View style={styles.statItem}>
-          <Text style={[styles.statValue, { color: '#EF4444' }]}>
-            {stats.overdue}
+          <Text style={[styles.statValue, { color: '#10B981' }]}>
+            {stats.retailed}
           </Text>
-          <Text style={styles.statLabel}>Overdue</Text>
+          <Text style={styles.statLabel}>Retailed</Text>
+        </View>
+        <View style={styles.statDivider} />
+        <View style={styles.statItem}>
+          <Text style={[styles.statValue, { color: '#EF4444' }]}>
+            {stats.cancelled}
+          </Text>
+          <Text style={styles.statLabel}>Cancelled</Text>
         </View>
       </View>
     );
   };
 
-  const renderTimelineTab = (
-    timeline: TimelineTab,
-    icon: string,
-    label: string,
-    color: string
-  ) => {
-    const isSelected = selectedTimeline === timeline;
-
-    return (
-      <TouchableOpacity
-        key={timeline}
-        style={[
-          styles.timelineTab,
-          { 
-            backgroundColor: isSelected ? color : '#FFFFFF',
-            borderWidth: isSelected ? 2 : 1.5,
-            borderColor: isSelected ? color : '#E2E8F0',
-          }
-        ]}
-        onPress={() => setSelectedTimeline(timeline)}
-        activeOpacity={0.7}
-      >
-        <View style={styles.timelineTabContent}>
-          <Text style={[styles.timelineTabIcon, { 
-            color: isSelected ? '#FFFFFF' : '#64748B',
-            opacity: isSelected ? 1 : 0.6,
-          }]}>
-            {icon}
-          </Text>
-          <Text style={[
-            styles.timelineTabLabel,
-            { color: isSelected ? '#FFFFFF' : '#64748B' }
-          ]}>
-            {label}
-          </Text>
-        </View>
-      </TouchableOpacity>
-    );
-  };
 
   const renderStatusTab = (
     status: StatusFilter,
@@ -328,36 +285,30 @@ export function BookingsScreen(): React.JSX.Element {
 
   const renderEmptyState = () => {
     const getEmptyStateContent = () => {
-      switch (selectedTimeline) {
+      switch (selectedStatus) {
         case 'all':
           return {
             icon: '📋',
             title: 'No Bookings',
             message: 'Bookings assigned to you will appear here'
           };
-        case 'today':
+        case 'pending':
           return {
-            icon: '📅',
-            title: 'No Actions Today',
-            message: 'No actions scheduled for today'
+            icon: '⏳',
+            title: 'No Pending Bookings',
+            message: 'No pending bookings found'
           };
-        case 'delivery_today':
-          return {
-            icon: '🚗',
-            title: 'No Deliveries Today',
-            message: 'No deliveries scheduled for today'
-          };
-        case 'pending_update':
-          return {
-            icon: '⏰',
-            title: 'No Pending Updates',
-            message: 'All bookings are up to date'
-          };
-        case 'overdue':
+        case 'retailed':
           return {
             icon: '✅',
-            title: 'No Overdue Bookings',
-            message: 'Great! No overdue bookings'
+            title: 'No Retailed Bookings',
+            message: 'No retailed bookings found'
+          };
+        case 'cancelled':
+          return {
+            icon: '❌',
+            title: 'No Cancelled Bookings',
+            message: 'No cancelled bookings found'
           };
         default:
           return {
@@ -409,6 +360,9 @@ export function BookingsScreen(): React.JSX.Element {
               <Text variant="bodyMedium" style={styles.subtitle}>
                 Track your vehicle bookings
               </Text>
+              <Text variant="bodySmall" style={styles.roleIndicator}>
+                {getRoleDisplayNameWithHierarchy(userRole)} • {dataFilterOptions.canSeeAll ? 'All Data' : dataFilterOptions.canSeeTeam ? 'Team Data' : 'Own Data'}
+              </Text>
             </View>
             <View style={styles.headerIcon}>
               <Text style={styles.headerIconText}>🚗</Text>
@@ -419,31 +373,16 @@ export function BookingsScreen(): React.JSX.Element {
           {renderStatsBar()}
         </View>
 
-        {/* Enhanced Search Bar and Timeline Tabs */}
-        <View style={styles.searchAndTabsContainer}>
-          <View style={styles.searchContainer}>
-            <Searchbar
-              placeholder="Search by name, phone, variant..."
-              onChangeText={setSearchQuery}
-              value={searchQuery}
-              style={styles.searchBar}
-              inputStyle={styles.searchInput}
-              iconColor="#3B82F6"
-            />
-          </View>
-          
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            style={styles.timelineTabs}
-            contentContainerStyle={styles.timelineTabsContent}
-          >
-            {renderTimelineTab('all', '', 'All', '#3B82F6')}
-            {renderTimelineTab('today', '', 'Today', '#3B82F6')}
-            {renderTimelineTab('delivery_today', '', 'Delivery', '#10B981')}
-            {renderTimelineTab('pending_update', '', 'Pending', '#F59E0B')}
-            {renderTimelineTab('overdue', '', 'Overdue', '#EF4444')}
-          </ScrollView>
+        {/* Enhanced Search Bar */}
+        <View style={styles.searchContainer}>
+          <Searchbar
+            placeholder="Search by name, phone, variant..."
+            onChangeText={setSearchQuery}
+            value={searchQuery}
+            style={styles.searchBar}
+            inputStyle={styles.searchInput}
+            iconColor="#3B82F6"
+          />
         </View>
 
         {/* Status Filter Tabs */}
@@ -614,6 +553,13 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '500',
     letterSpacing: -0.2,
+  },
+  roleIndicator: {
+    color: '#3B82F6',
+    marginTop: 2,
+    fontSize: 12,
+    fontWeight: '600',
+    letterSpacing: 0.2,
   },
   statsBar: {
     flexDirection: 'row',

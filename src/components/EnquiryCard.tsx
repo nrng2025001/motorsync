@@ -14,6 +14,8 @@ interface EnquiryCardProps {
   onEdit?: () => void;
   onConvertToBooking?: () => void;
   showActions?: boolean;
+  showCreatorInfo?: boolean;
+  userRole?: string;
 }
 
 export function EnquiryCard({
@@ -22,6 +24,8 @@ export function EnquiryCard({
   onEdit,
   onConvertToBooking,
   showActions = true,
+  showCreatorInfo = false,
+  userRole,
 }: EnquiryCardProps): React.JSX.Element {
   const getCategoryColor = (category: EnquiryCategory): string => {
     switch (category) {
@@ -120,6 +124,22 @@ export function EnquiryCard({
             <Text style={styles.detailIcon}>🔗</Text>
             <Text style={styles.detailText}>Source: {enquiry.source}</Text>
           </View>
+          {showCreatorInfo && enquiry.createdBy && (
+            <View style={styles.detailRow}>
+              <Text style={styles.detailIcon}>👤</Text>
+              <Text style={styles.detailText}>
+                Created by: {enquiry.createdBy.name} ({enquiry.createdBy.email})
+              </Text>
+            </View>
+          )}
+          {showCreatorInfo && enquiry.assignedTo && (
+            <View style={styles.detailRow}>
+              <Text style={styles.detailIcon}>🎯</Text>
+              <Text style={styles.detailText}>
+                Assigned to: {enquiry.assignedTo.name} ({enquiry.assignedTo.email})
+              </Text>
+            </View>
+          )}
         </View>
 
         {/* Footer with timestamp and action buttons */}

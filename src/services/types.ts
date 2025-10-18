@@ -98,6 +98,11 @@ export interface Enquiry {
     name: string;
     email: string;
   };
+  assignedTo?: {
+    firebaseUid: string;
+    name: string;
+    email: string;
+  };
   bookings?: any[];
   quotations?: any[];
   _count?: {
@@ -165,6 +170,11 @@ export interface Booking {
   fuelType?: string;
   transmission?: string;
   advisorId?: string;
+  advisor?: {
+    firebaseUid: string;
+    name: string;
+    email: string;
+  };
   bookingDate: string;
   expectedDeliveryDate?: string;
   financeRequired: boolean;

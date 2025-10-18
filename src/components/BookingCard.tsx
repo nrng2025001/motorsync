@@ -123,6 +123,21 @@ export function BookingCard({
           )}
         </View>
 
+        {/* Assignee Information */}
+        {booking.advisor && (
+          <View style={styles.assigneeInfo}>
+            <Text variant="bodySmall" style={styles.assigneeLabel}>
+              👤 Assigned to:
+            </Text>
+            <Text variant="bodySmall" style={styles.assigneeName}>
+              {booking.advisor.name}
+            </Text>
+            <Text variant="bodySmall" style={styles.assigneeEmail}>
+              {booking.advisor.email}
+            </Text>
+          </View>
+        )}
+
         {/* Dates Section */}
         <View style={styles.datesSection}>
           <View style={styles.dateItem}>
@@ -229,8 +244,8 @@ export function BookingCard({
           </Chip>
         )}
 
-        {/* Action Buttons - Only for Customer Advisors */}
-        {showActions && onUpdate && userRole === 'CUSTOMER_ADVISOR' && (
+        {/* Action Buttons - Customer Advisors and higher-level roles for remarks */}
+        {showActions && onUpdate && ['CUSTOMER_ADVISOR', 'TEAM_LEAD', 'SALES_MANAGER', 'GENERAL_MANAGER', 'ADMIN'].includes(userRole) && (
           <View style={styles.actions}>
             <Button
               mode="contained"
@@ -239,7 +254,7 @@ export function BookingCard({
               style={styles.updateButton}
               compact
             >
-              Update Booking
+              {userRole === 'CUSTOMER_ADVISOR' ? 'Update Booking' : 'Add Remarks'}
             </Button>
           </View>
         )}
@@ -306,6 +321,28 @@ const styles = StyleSheet.create({
   details: {
     color: '#4B5563',
     marginBottom: 2,
+  },
+  assigneeInfo: {
+    marginBottom: 12,
+    padding: 10,
+    backgroundColor: '#F0F9FF',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#BAE6FD',
+  },
+  assigneeLabel: {
+    color: '#0369A1',
+    fontWeight: '600',
+    marginBottom: 4,
+  },
+  assigneeName: {
+    color: '#1E40AF',
+    fontWeight: '500',
+    marginBottom: 2,
+  },
+  assigneeEmail: {
+    color: '#6B7280',
+    fontSize: 12,
   },
   datesSection: {
     flexDirection: 'row',
