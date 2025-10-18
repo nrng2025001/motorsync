@@ -226,11 +226,12 @@ export class AuthService {
       // This will be handled by the API client interceptor
       
       // Sync user data with backend
+      // Note: Role assignment should be handled by backend admin, not hardcoded here
       await AuthAPI.syncFirebaseUser({
         firebaseUid: user.uid,
         email: user.email || '',
-        name: user.displayName || '',
-        roleName: 'CUSTOMER_ADVISOR' // Default role, can be updated later
+        name: user.displayName || ''
+        // roleName removed - should be assigned by backend admin
       });
       
       console.log('User synced with backend successfully');

@@ -49,6 +49,7 @@ const BackgroundPattern = () => (
 );
 
 import { useAuth, type UserRole, getRoleDisplayName } from '../../context/AuthContext';
+import { getUserRole } from '../../utils/roleUtils';
 import { useTeam, canManageTeam } from '../../context/TeamContext';
 import { DashboardCard } from '../../components/DashboardCard';
 import { theme, spacing, shadows, borderRadius } from '../../utils/theme';
@@ -146,7 +147,7 @@ export function DashboardScreen({ navigation }: any): React.JSX.Element {
   });
   const [refreshing, setRefreshing] = useState(false);
 
-  const userRole = state.user?.role?.name || 'CUSTOMER_ADVISOR';
+  const userRole = getUserRole(state.user);
   const userName = state.user?.name || 'User';
   const canManageTeams = canManageTeam(userRole);
   
