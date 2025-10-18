@@ -165,13 +165,11 @@ function transformUserProfile(userProfile: any): User {
       name: actualUserProfile.role
     };
   }
-  // Check if role is missing entirely
+  // Check if role is missing entirely - this should not happen with proper backend
   else if (!actualUserProfile.role) {
-    console.log('🔄 Adding default role structure');
-    transformedProfile.role = {
-      id: 'unknown',
-      name: 'CUSTOMER_ADVISOR'
-    };
+    console.error('❌ No role found in user profile from backend');
+    console.error('   This indicates a backend issue or incomplete user setup');
+    throw new Error('User role is missing from backend response. Please contact administrator.');
   }
   
   // Ensure we have the required fields

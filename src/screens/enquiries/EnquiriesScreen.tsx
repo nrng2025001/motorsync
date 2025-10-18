@@ -40,6 +40,7 @@ import { Enquiry, EnquiryCategory, EnquiryStatus, EnquirySource, AutoBookingResp
 import { MainStackParamList } from '../../navigation/MainNavigator';
 import { theme, spacing, shadows, borderRadius } from '../../utils/theme';
 import { useAuth } from '../../context/AuthContext';
+import { getUserRole } from '../../utils/roleUtils';
 
 const { width, height } = Dimensions.get('window');
 
@@ -89,8 +90,8 @@ export function EnquiriesScreen(): React.JSX.Element {
   const navigation = useNavigation<NavigationProp>();
   const { state: authState } = useAuth();
 
-  // Get user role and permissions
-  const userRole = authState.user?.role?.name || 'CUSTOMER_ADVISOR';
+  // Get user role and permissions - will throw error if role is missing
+  const userRole = getUserRole(authState.user);
   const currentUserId = (authState.user as any)?.user?.firebaseUid || authState.user?.firebaseUid;
 
   // State

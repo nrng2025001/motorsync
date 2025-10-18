@@ -36,6 +36,7 @@ import {
 import { MainStackParamList } from '../../navigation/MainNavigator';
 import { theme, spacing, shadows, borderRadius } from '../../utils/theme';
 import { useAuth } from '../../context/AuthContext';
+import { getUserRole } from '../../utils/roleUtils';
 
 type NavigationProp = StackNavigationProp<MainStackParamList>;
 
@@ -75,7 +76,7 @@ export function BookingUpdateScreen({ route }: BookingUpdateScreenProps): React.
   const { state: authState } = useAuth();
   const { bookingId, booking: initialBooking } = route.params;
   
-  const userRole = authState.user?.role?.name || 'CUSTOMER_ADVISOR';
+  const userRole = getUserRole(authState.user);
 
   // Restrict access to only Customer Advisors
   if (userRole !== 'CUSTOMER_ADVISOR') {

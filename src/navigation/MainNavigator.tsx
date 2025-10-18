@@ -4,6 +4,7 @@ import { createStackNavigator } from '@react-navigation/stack';
 import { Icon } from 'react-native-paper';
 
 import { useAuth, type UserRole } from '../context/AuthContext';
+import { getUserRole } from '../utils/roleUtils';
 import { DashboardScreen } from '../screens/dashboard/DashboardScreen';
 import { EnquiriesScreen } from '../screens/enquiries/EnquiriesScreen';
 import { EnquiryDetailsScreen } from '../screens/enquiries/EnquiryDetailsScreen';
@@ -96,7 +97,7 @@ function getTabsForRole(role: UserRole) {
  */
 function MainTabNavigator(): React.JSX.Element {
   const { state } = useAuth();
-  const userRole = state.user?.role?.name || 'CUSTOMER_ADVISOR';
+  const userRole = getUserRole(state.user);
   const tabs = getTabsForRole(userRole);
 
   return (
