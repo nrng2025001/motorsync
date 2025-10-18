@@ -41,6 +41,7 @@ import { MainStackParamList } from '../../navigation/MainNavigator';
 import { theme, spacing, shadows, borderRadius } from '../../utils/theme';
 import { useAuth } from '../../context/AuthContext';
 import { getUserRole } from '../../utils/roleUtils';
+import { getDataFilterOptions, canSeeUserData, getRoleDisplayNameWithHierarchy, filterEnquiriesByHierarchy } from '../../utils/hierarchyUtils';
 
 const { width, height } = Dimensions.get('window');
 
@@ -93,6 +94,9 @@ export function EnquiriesScreen(): React.JSX.Element {
   // Get user role and permissions - will throw error if role is missing
   const userRole = getUserRole(authState.user);
   const currentUserId = (authState.user as any)?.user?.firebaseUid || authState.user?.firebaseUid;
+  
+  // Get hierarchical data access permissions
+  const dataFilterOptions = getDataFilterOptions(userRole);
 
   // State
   const [selectedCategory, setSelectedCategory] = useState<EnquiryCategory | 'ALL'>(EnquiryCategory.HOT);
@@ -112,29 +116,68 @@ export function EnquiriesScreen(): React.JSX.Element {
 
   // Role-based permission functions
   const canCreateEnquiry = () => {
-    return ['CUSTOMER_ADVISOR', 'TEAM_LEAD', 'SALES_MANAGER', 'GENERAL_MANAGER'].includes(userRole);
+    // Only Customer Advisors can create enquiries
+    // Team Leads, Sales Managers, and General Managers can only view and manage enquiries
+    return userRole === 'CUSTOMER_ADVISOR';
   };
 
   const canEditEnquiry = (enquiry: Enquiry) => {
-    // Customer advisors can edit their own enquiries
+    // Only Customer Advisors can edit enquiries
+    // Team Leads, Sales Managers, and General Managers can only view enquiries
     if (userRole === 'CUSTOMER_ADVISOR') {
       return enquiry.createdByUserId === currentUserId || enquiry.assignedToUserId === currentUserId;
     }
-    // Higher roles can edit enquiries from their team/dealership
-    return ['TEAM_LEAD', 'SALES_MANAGER', 'GENERAL_MANAGER'].includes(userRole);
+    // Higher roles can only view, not edit
+    return false;
   };
 
   const canDeleteEnquiry = () => {
-    return ['GENERAL_MANAGER', 'ADMIN'].includes(userRole);
+    // Only Customer Advisors can delete their own enquiries
+    // Higher roles can only view, not delete
+    return userRole === 'CUSTOMER_ADVISOR';
   };
 
   const canAssignEnquiry = () => {
-    return ['TEAM_LEAD', 'SALES_MANAGER', 'GENERAL_MANAGER'].includes(userRole);
+    // Only Customer Advisors can assign enquiries
+    // Higher roles can only view, not assign
+    return userRole === 'CUSTOMER_ADVISOR';
   };
 
-  // Enhanced filtering and sorting
+  const canConvertToBooking = (enquiry: Enquiry) => {
+    // Only Customer Advisors can convert enquiries to bookings
+    // Higher roles can only view, not convert
+    if (userRole === 'CUSTOMER_ADVISOR') {
+      return enquiry.createdByUserId === currentUserId || enquiry.assignedToUserId === currentUserId;
+    }
+    return false;
+  };
+
+  const canSeeEnquiry = (enquiry: Enquiry) => {
+    // Can see own enquiries
+    if (enquiry.createdByUserId === currentUserId || enquiry.assignedToUserId === currentUserId) {
+      return true;
+    }
+    
+    // Higher roles can see team enquiries
+    if (dataFilterOptions.canSeeAll) {
+      return true;
+    }
+    
+    if (dataFilterOptions.canSeeTeam) {
+      // TODO: Implement team hierarchy check when backend provides team structure
+      // For now, show all enquiries for team roles
+      return true;
+    }
+    
+    return false;
+  };
+
+  // Enhanced filtering and sorting with hierarchical data access
   const getFilteredEnquiries = () => {
     let filtered = [...allEnquiries];
+
+    // Apply hierarchical data access filter first
+    filtered = filtered.filter(enquiry => canSeeEnquiry(enquiry));
 
     // Apply search filter
     if (searchQuery.trim()) {
@@ -225,8 +268,23 @@ export function EnquiriesScreen(): React.JSX.Element {
         console.log('⚠️ [EnquiriesScreen] No enquiries returned from backend');
       }
       
-      // For now, show all enquiries without filtering to debug
-      setAllEnquiries(allEnquiriesFromBackend);
+      // Apply hierarchical filtering for managers
+      let filteredEnquiries = allEnquiriesFromBackend;
+      
+      if (['TEAM_LEAD', 'SALES_MANAGER', 'GENERAL_MANAGER'].includes(userRole)) {
+        // Filter enquiries based on hierarchy
+        const currentUserId = userData?.firebaseUid;
+        if (currentUserId) {
+          filteredEnquiries = filterEnquiriesByHierarchy(allEnquiriesFromBackend, userRole, currentUserId, []);
+        }
+        console.log('🔍 [EnquiriesScreen] Applied hierarchical filtering:', {
+          originalCount: allEnquiriesFromBackend.length,
+          filteredCount: filteredEnquiries.length,
+          userRole
+        });
+      }
+      
+      setAllEnquiries(filteredEnquiries);
       console.log('✅ [EnquiriesScreen] User enquiries set in state');
       
       // Debug: Show all enquiries by category
@@ -246,7 +304,7 @@ export function EnquiriesScreen(): React.JSX.Element {
       setLoading(false);
       setRefreshing(false);
     }
-  }, []);
+  }, [userRole]);
 
   // Initial load and category change
   useEffect(() => {
@@ -601,6 +659,9 @@ export function EnquiriesScreen(): React.JSX.Element {
               <Text variant="bodyMedium" style={styles.subtitle}>
                 Manage your sales pipeline
               </Text>
+              <Text variant="bodySmall" style={styles.roleIndicator}>
+                {getRoleDisplayNameWithHierarchy(userRole)} • {dataFilterOptions.canSeeAll ? 'All Data' : dataFilterOptions.canSeeTeam ? 'Team Data' : 'Own Data'} • {canCreateEnquiry() ? 'Can Create' : 'View Only'}
+              </Text>
             </View>
             <View style={styles.headerIcon}>
               <Text style={styles.headerIconText}>📊</Text>
@@ -624,77 +685,6 @@ export function EnquiriesScreen(): React.JSX.Element {
             />
           </View>
 
-          {/* Enhanced Filter Controls */}
-          <View style={styles.filterControls}>
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              style={styles.filterScrollView}
-              contentContainerStyle={styles.filterScrollContent}
-            >
-              {/* Status Filter */}
-              <Menu
-                visible={showStatusMenu}
-                onDismiss={() => setShowStatusMenu(false)}
-                anchor={
-                  <Button
-                    mode="outlined"
-                    onPress={() => setShowStatusMenu(true)}
-                    style={styles.filterButton}
-                    contentStyle={styles.filterButtonContent}
-                    icon="filter-variant"
-                  >
-                    Status: {selectedStatus}
-                  </Button>
-                }
-              >
-                <Menu.Item onPress={() => { setSelectedStatus('ALL'); setShowStatusMenu(false); }} title="All Status" />
-                <Menu.Item onPress={() => { setSelectedStatus(EnquiryStatus.OPEN); setShowStatusMenu(false); }} title="Open" />
-                <Menu.Item onPress={() => { setSelectedStatus(EnquiryStatus.CONTACTED); setShowStatusMenu(false); }} title="Contacted" />
-                <Menu.Item onPress={() => { setSelectedStatus(EnquiryStatus.QUALIFIED); setShowStatusMenu(false); }} title="Qualified" />
-                <Menu.Item onPress={() => { setSelectedStatus(EnquiryStatus.CONVERTED); setShowStatusMenu(false); }} title="Converted" />
-                <Menu.Item onPress={() => { setSelectedStatus(EnquiryStatus.CLOSED); setShowStatusMenu(false); }} title="Closed" />
-              </Menu>
-
-              {/* Sort Options */}
-              <Menu
-                visible={showFilterMenu}
-                onDismiss={() => setShowFilterMenu(false)}
-                anchor={
-                  <Button
-                    mode="outlined"
-                    onPress={() => setShowFilterMenu(true)}
-                    style={styles.filterButton}
-                    contentStyle={styles.filterButtonContent}
-                    icon="sort"
-                  >
-                    Sort: {sortBy}
-                  </Button>
-                }
-              >
-                <Menu.Item onPress={() => { setSortBy('createdAt'); setShowFilterMenu(false); }} title="Date" />
-                <Menu.Item onPress={() => { setSortBy('customerName'); setShowFilterMenu(false); }} title="Name" />
-                <Menu.Item onPress={() => { setSortBy('status'); setShowFilterMenu(false); }} title="Status" />
-                <Menu.Item onPress={() => { setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc'); setShowFilterMenu(false); }} title={`Order: ${sortOrder.toUpperCase()}`} />
-              </Menu>
-
-              {/* Clear Filters */}
-              {(selectedStatus !== 'ALL' || searchQuery.trim() || selectedCategory !== 'ALL') && (
-                <Button
-                  mode="text"
-                  onPress={() => {
-                    setSelectedStatus('ALL');
-                    setSearchQuery('');
-                    setSelectedCategory(EnquiryCategory.HOT);
-                  }}
-                  style={styles.clearFiltersButton}
-                  icon="close"
-                >
-                  Clear
-                </Button>
-              )}
-            </ScrollView>
-          </View>
           
           <ScrollView
             horizontal
@@ -760,13 +750,15 @@ export function EnquiriesScreen(): React.JSX.Element {
                     <EnquiryCard
                       enquiry={enquiry}
                       onPress={() => handleEditEnquiry(enquiry)}
-                      onEdit={() => handleEditEnquiry(enquiry)}
+                      onEdit={canEditEnquiry(enquiry) ? () => handleEditEnquiry(enquiry) : undefined}
                       onConvertToBooking={
-                        selectedCategory === EnquiryCategory.HOT
+                        canConvertToBooking(enquiry) && selectedCategory === EnquiryCategory.HOT
                           ? () => handleConvertToBooking(enquiry)
                           : undefined
                       }
-                      showActions={true}
+                      showActions={canEditEnquiry(enquiry) || canConvertToBooking(enquiry)}
+                      showCreatorInfo={dataFilterOptions.canSeeTeam || dataFilterOptions.canSeeAll}
+                      userRole={userRole}
                     />
                   </Animated.View>
                 ))}
@@ -796,7 +788,7 @@ export function EnquiriesScreen(): React.JSX.Element {
               Role: {authState.user?.role?.name || 'undefined'}
             </Text>
             <Text style={{ color: 'white', fontSize: 12 }}>
-              FAB Visible: {authState.user?.role ? 'YES' : 'NO'}
+              FAB Visible: {canCreateEnquiry() ? 'YES' : 'NO'}
             </Text>
           </View>
         )}
@@ -901,6 +893,13 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '500',
     letterSpacing: -0.2,
+  },
+  roleIndicator: {
+    color: '#3B82F6',
+    marginTop: 2,
+    fontSize: 12,
+    fontWeight: '600',
+    letterSpacing: 0.2,
   },
   statsBar: {
     flexDirection: 'row',

@@ -75,6 +75,13 @@ class BookingAPI {
     stockAvailability?: string;
   financeRequired?: boolean;
   financerName?: string;
+  dealerCode?: string;
+  zone?: string;
+  region?: string;
+  fileLoginDate?: string;
+  approvalDate?: string;
+  backOrderStatus?: boolean;
+  rtoDate?: string;
   advisorRemarks?: string;
     teamLeadRemarks?: string;
     salesManagerRemarks?: string;

@@ -31,10 +31,10 @@ import { type Booking, BookingStatus } from '../../services/types';
  */
 const remarksFieldMap: Record<string, keyof Booking> = {
   'CUSTOMER_ADVISOR': 'advisorRemarks',
-  'TEAM_LEAD': 'advisorRemarks',
-  'SALES_MANAGER': 'advisorRemarks',
-  'GENERAL_MANAGER': 'advisorRemarks',
-  'ADMIN': 'advisorRemarks',
+  'TEAM_LEAD': 'teamLeadRemarks',
+  'SALES_MANAGER': 'salesManagerRemarks',
+  'GENERAL_MANAGER': 'generalManagerRemarks',
+  'ADMIN': 'adminRemarks',
 };
 
 /**
@@ -119,16 +119,19 @@ export function BookingDetailsScreen({ route, navigation }: any): React.JSX.Elem
   }, [bookingId, userRole]);
 
   /**
-   * Update advisor remarks
+   * Update remarks based on user role
    */
   const handleUpdateRemarks = async () => {
     if (!booking) return;
     
     setUpdating(true);
     try {
-      await bookingAPI.updateBooking(booking.id, {
-        advisorRemarks: editableRemarks,
-      });
+      const userRemarksField = remarksFieldMap[userRole];
+      const updateData = {
+        [userRemarksField]: editableRemarks,
+      };
+      
+      await bookingAPI.updateBooking(booking.id, updateData);
       
       Alert.alert('Success', 'Remarks updated successfully');
       
@@ -137,6 +140,9 @@ export function BookingDetailsScreen({ route, navigation }: any): React.JSX.Elem
       const responseData = response.data as any;
       const bookingData = responseData?.data?.booking || responseData?.booking || responseData;
       setBooking(bookingData);
+      
+      // Update the editable remarks with the new value
+      setEditableRemarks((bookingData[userRemarksField] as string) || '');
     } catch (err: any) {
       console.error('Error updating remarks:', err);
       Alert.alert('Error', err.message || 'Failed to update remarks');
@@ -554,7 +560,7 @@ export function BookingDetailsScreen({ route, navigation }: any): React.JSX.Elem
             </Text>
             <Divider style={styles.divider} />
             
-            {/* Customer Advisor Remarks - EDITABLE for Customer Advisors */}
+            {/* Customer Advisor Remarks */}
             {userRole === 'CUSTOMER_ADVISOR' ? (
               <View style={[styles.remarksSection, styles.editableRemarksSection]}>
                 <Text style={styles.roleLabel}>
@@ -590,11 +596,154 @@ export function BookingDetailsScreen({ route, navigation }: any): React.JSX.Elem
               )
             )}
 
-            {/* Note: Additional remarks fields (teamLeadRemarks, salesManagerRemarks, etc.) 
-                 are not available in the current Booking interface */}
+            {/* Team Lead Remarks */}
+            {userRole === 'TEAM_LEAD' ? (
+              <View style={[styles.remarksSection, styles.editableRemarksSection]}>
+                <Text style={styles.roleLabel}>
+                  <Icon source="account-supervisor" size={16} /> Team Lead (You):
+                </Text>
+                <TextInput
+                  value={editableRemarks}
+                  onChangeText={setEditableRemarks}
+                  placeholder="Add your remarks here..."
+                  multiline
+                  numberOfLines={4}
+                  style={styles.remarksInput}
+                  mode="outlined"
+                />
+                <Button 
+                  mode="contained" 
+                  onPress={handleUpdateRemarks}
+                  loading={updating}
+                  disabled={updating}
+                  style={styles.updateButton}
+                >
+                  Update My Remarks
+                </Button>
+              </View>
+            ) : (
+              booking.teamLeadRemarks && (
+                <View style={styles.remarksSection}>
+                  <Text style={styles.roleLabel}>
+                    <Icon source="account-supervisor" size={16} /> Team Lead:
+                  </Text>
+                  <Text style={styles.remarksText}>{booking.teamLeadRemarks}</Text>
+                </View>
+              )
+            )}
+
+            {/* Sales Manager Remarks */}
+            {userRole === 'SALES_MANAGER' ? (
+              <View style={[styles.remarksSection, styles.editableRemarksSection]}>
+                <Text style={styles.roleLabel}>
+                  <Icon source="account-star" size={16} /> Sales Manager (You):
+                </Text>
+                <TextInput
+                  value={editableRemarks}
+                  onChangeText={setEditableRemarks}
+                  placeholder="Add your remarks here..."
+                  multiline
+                  numberOfLines={4}
+                  style={styles.remarksInput}
+                  mode="outlined"
+                />
+                <Button 
+                  mode="contained" 
+                  onPress={handleUpdateRemarks}
+                  loading={updating}
+                  disabled={updating}
+                  style={styles.updateButton}
+                >
+                  Update My Remarks
+                </Button>
+              </View>
+            ) : (
+              booking.salesManagerRemarks && (
+                <View style={styles.remarksSection}>
+                  <Text style={styles.roleLabel}>
+                    <Icon source="account-star" size={16} /> Sales Manager:
+                  </Text>
+                  <Text style={styles.remarksText}>{booking.salesManagerRemarks}</Text>
+                </View>
+              )
+            )}
+
+            {/* General Manager Remarks */}
+            {userRole === 'GENERAL_MANAGER' ? (
+              <View style={[styles.remarksSection, styles.editableRemarksSection]}>
+                <Text style={styles.roleLabel}>
+                  <Icon source="account-crown" size={16} /> General Manager (You):
+                </Text>
+                <TextInput
+                  value={editableRemarks}
+                  onChangeText={setEditableRemarks}
+                  placeholder="Add your remarks here..."
+                  multiline
+                  numberOfLines={4}
+                  style={styles.remarksInput}
+                  mode="outlined"
+                />
+                <Button 
+                  mode="contained" 
+                  onPress={handleUpdateRemarks}
+                  loading={updating}
+                  disabled={updating}
+                  style={styles.updateButton}
+                >
+                  Update My Remarks
+                </Button>
+              </View>
+            ) : (
+              booking.generalManagerRemarks && (
+                <View style={styles.remarksSection}>
+                  <Text style={styles.roleLabel}>
+                    <Icon source="account-crown" size={16} /> General Manager:
+                  </Text>
+                  <Text style={styles.remarksText}>{booking.generalManagerRemarks}</Text>
+                </View>
+              )
+            )}
+
+            {/* Admin Remarks */}
+            {userRole === 'ADMIN' ? (
+              <View style={[styles.remarksSection, styles.editableRemarksSection]}>
+                <Text style={styles.roleLabel}>
+                  <Icon source="shield-account" size={16} /> Admin (You):
+                </Text>
+                <TextInput
+                  value={editableRemarks}
+                  onChangeText={setEditableRemarks}
+                  placeholder="Add your remarks here..."
+                  multiline
+                  numberOfLines={4}
+                  style={styles.remarksInput}
+                  mode="outlined"
+                />
+                <Button 
+                  mode="contained" 
+                  onPress={handleUpdateRemarks}
+                  loading={updating}
+                  disabled={updating}
+                  style={styles.updateButton}
+                >
+                  Update My Remarks
+                </Button>
+              </View>
+            ) : (
+              booking.adminRemarks && (
+                <View style={styles.remarksSection}>
+                  <Text style={styles.roleLabel}>
+                    <Icon source="shield-account" size={16} /> Admin:
+                  </Text>
+                  <Text style={styles.remarksText}>{booking.adminRemarks}</Text>
+                </View>
+              )
+            )}
+
             
             {/* Show message if no remarks yet */}
-            {!booking.advisorRemarks && userRole !== 'CUSTOMER_ADVISOR' && (
+            {!booking.advisorRemarks && !booking.teamLeadRemarks && !booking.salesManagerRemarks && 
+             !booking.generalManagerRemarks && !booking.adminRemarks && userRole !== 'CUSTOMER_ADVISOR' && (
               <Text style={styles.noRemarksText}>No remarks have been added yet.</Text>
             )}
           </Card.Content>
