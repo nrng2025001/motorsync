@@ -190,6 +190,15 @@ export function getVisibleUserIds(userRole: UserRole, currentUserId: string, all
  * Filter bookings based on user hierarchy
  */
 export function filterBookingsByHierarchy(bookings: any[], userRole: UserRole, currentUserId: string, allUsers: any[] = []): any[] {
+  // For management roles, if we don't have user data, return all bookings
+  // The backend already filters by dealership, so we don't need additional filtering
+  if (['TEAM_LEAD', 'SALES_MANAGER', 'GENERAL_MANAGER', 'ADMIN'].includes(userRole)) {
+    if (allUsers.length === 0) {
+      // No user data available, return all bookings (backend already filtered by dealership)
+      return bookings;
+    }
+  }
+  
   const visibleUserIds = getVisibleUserIds(userRole, currentUserId, allUsers);
   
   return bookings.filter(booking => {
@@ -211,6 +220,15 @@ export function filterBookingsByHierarchy(bookings: any[], userRole: UserRole, c
  * Filter enquiries based on user hierarchy
  */
 export function filterEnquiriesByHierarchy(enquiries: any[], userRole: UserRole, currentUserId: string, allUsers: any[] = []): any[] {
+  // For management roles, if we don't have user data, return all enquiries
+  // The backend already filters by dealership, so we don't need additional filtering
+  if (['TEAM_LEAD', 'SALES_MANAGER', 'GENERAL_MANAGER', 'ADMIN'].includes(userRole)) {
+    if (allUsers.length === 0) {
+      // No user data available, return all enquiries (backend already filtered by dealership)
+      return enquiries;
+    }
+  }
+  
   const visibleUserIds = getVisibleUserIds(userRole, currentUserId, allUsers);
   
   return enquiries.filter(enquiry => {

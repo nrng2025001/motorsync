@@ -187,13 +187,20 @@ export function DashboardScreen({ navigation }: any): React.JSX.Element {
       
       
       
-      // Filter enquiries by current user
+      // Apply role-based filtering for enquiries
       const currentUserId = state.user?.firebaseUid;
-      enquiries = allEnquiries.filter((enquiry: any) => 
-        enquiry.createdByUserId === currentUserId || 
-        enquiry.createdBy?.firebaseUid === currentUserId ||
-        enquiry.assignedToUserId === currentUserId
-      );
+      if (userRole === 'CUSTOMER_ADVISOR') {
+        // Customer Advisors can only see their own enquiries
+        enquiries = allEnquiries.filter((enquiry: any) => 
+          enquiry.createdByUserId === currentUserId || 
+          enquiry.createdBy?.firebaseUid === currentUserId ||
+          enquiry.assignedToUserId === currentUserId
+        );
+      } else {
+        // Management roles (Team Lead, Sales Manager, etc.) can see all enquiries in dealership
+        // Backend already filters by dealership, so no additional filtering needed
+        enquiries = allEnquiries;
+      }
       
       // Ensure we have valid arrays
       if (!Array.isArray(enquiries)) {

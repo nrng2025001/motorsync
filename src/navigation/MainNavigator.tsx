@@ -19,6 +19,7 @@ import { TeamScreen } from '../screens/team/TeamScreen';
 import { MemberProfileScreen } from '../screens/team/MemberProfileScreen';
 import { AIAssistantScreen } from '../screens/ai/AIAssistantScreen';
 import { NotificationsScreen } from '../screens/notifications/NotificationsScreen';
+import { NotificationTestScreen } from '../screens/notifications/NotificationTestScreen';
 import { ProfileScreen } from '../screens/profile/ProfileScreen';
 import { BackendTestScreen } from '../screens/diagnostics/BackendTestScreen';
 import { StockScreen } from '../screens/stock/StockScreen';
@@ -34,6 +35,7 @@ export type MainTabParamList = {
   Enquiries: undefined;
   AIAssistant: undefined;
   QuotationGenerator: undefined;
+  Notifications: undefined;
   Profile: undefined;
   BackendTest: undefined;
 };
@@ -44,6 +46,7 @@ export type MainTabParamList = {
 export type MainStackParamList = {
   MainTabs: undefined;
   Notifications: undefined;
+  NotificationTest: undefined;
   EnquiryDetails: { enquiryId: string };
   BookingDetails: { bookingId: string };
   BookingUpdate: { bookingId: string; booking?: any };
@@ -73,8 +76,11 @@ function getTabsForRole(role: UserRole) {
   const baseTabs: Array<{ name: keyof MainTabParamList; icon: string; label: string }> = [
     { name: 'Dashboard', icon: 'view-dashboard', label: 'Dashboard' },
     { name: 'Enquiries', icon: 'account-group', label: 'Enquiries' },
+    { name: 'Bookings', icon: 'calendar-check', label: 'Bookings' },
+    { name: 'Stock', icon: 'car', label: 'Stock' },
     { name: 'AIAssistant', icon: 'robot', label: 'AI Assistant' },
     { name: 'QuotationGenerator', icon: 'file-document', label: 'Quotations' },
+    { name: 'Notifications', icon: 'bell', label: 'Notifications' },
     { name: 'Profile', icon: 'account', label: 'Profile' },
   ];
 
@@ -160,6 +166,12 @@ function getScreenComponent(tabName: string) {
       return DashboardScreen;
     case 'Enquiries':
       return EnquiriesScreen;
+    case 'Bookings':
+      return BookingsScreen;
+    case 'Stock':
+      return StockScreen;
+    case 'Notifications':
+      return NotificationsScreen;
     case 'AIAssistant':
       return AIAssistantScreen;
     case 'QuotationGenerator':
@@ -187,6 +199,15 @@ export function MainNavigator(): React.JSX.Element {
         options={{
           presentation: 'modal',
           headerShown: false,
+        }}
+      />
+      <Stack.Screen 
+        name="NotificationTest" 
+        component={NotificationTestScreen}
+        options={{
+          presentation: 'modal',
+          headerShown: true,
+          title: 'Notification Test',
         }}
       />
       <Stack.Screen 
