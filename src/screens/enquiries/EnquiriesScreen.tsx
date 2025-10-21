@@ -781,17 +781,6 @@ export function EnquiriesScreen(): React.JSX.Element {
           />
         )}
         
-        {/* Debug info */}
-        {__DEV__ && (
-          <View style={{ position: 'absolute', top: 100, left: 20, backgroundColor: 'rgba(0,0,0,0.8)', padding: 10, borderRadius: 5 }}>
-            <Text style={{ color: 'white', fontSize: 12 }}>
-              Role: {authState.user?.role?.name || 'undefined'}
-            </Text>
-            <Text style={{ color: 'white', fontSize: 12 }}>
-              FAB Visible: {canCreateEnquiry() ? 'YES' : 'NO'}
-            </Text>
-          </View>
-        )}
 
         {/* Enhanced Snackbar */}
         <Snackbar
