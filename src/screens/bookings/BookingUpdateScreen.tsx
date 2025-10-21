@@ -3,7 +3,7 @@
  * Comprehensive form for updating booking details with all required fields
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
   StyleSheet,
@@ -23,7 +23,7 @@ import {
   ActivityIndicator,
 } from 'react-native-paper';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { StackNavigationProp } from '@react-navigation/stack';
 
 import { DatePickerISO } from '../../components/DatePickerISO';
@@ -209,26 +209,23 @@ export function BookingUpdateScreen({ route }: BookingUpdateScreenProps): React.
     }
   }, [bookingId, initialBooking]);
 
+  // Refresh booking data when screen comes into focus
+  useFocusEffect(
+    useCallback(() => {
+      if (bookingId) {
+        loadBooking();
+      }
+    }, [bookingId])
+  );
+
   const loadBooking = async () => {
     try {
       setLoading(true);
       const response = await bookingAPI.getBookingById(bookingId);
       
-      console.log('🔍 [BookingUpdateScreen] Raw API response:', response);
-      console.log('🔍 [BookingUpdateScreen] Response data:', response.data);
-      
       // Handle nested response structure: {data: {data: {booking: {...}}}}
       const responseData = response.data as any;
       const bookingData = responseData?.data?.booking || responseData?.booking || responseData;
-      
-      console.log('🔍 [BookingUpdateScreen] Extracted booking data:', bookingData);
-      console.log('🔍 [BookingUpdateScreen] Booking remarks:', {
-        advisorRemarks: bookingData?.advisorRemarks,
-        teamLeadRemarks: bookingData?.teamLeadRemarks,
-        salesManagerRemarks: bookingData?.salesManagerRemarks,
-        generalManagerRemarks: bookingData?.generalManagerRemarks,
-        adminRemarks: bookingData?.adminRemarks,
-      });
       
       setBooking(bookingData);
       initializeFormData(bookingData);
@@ -241,14 +238,6 @@ export function BookingUpdateScreen({ route }: BookingUpdateScreenProps): React.
   };
 
   const initializeFormData = (bookingData: Booking) => {
-    console.log('🔍 [BookingUpdateScreen] Initializing form data with booking:', bookingData);
-    console.log('🔍 [BookingUpdateScreen] Remarks data:', {
-      advisorRemarks: bookingData.advisorRemarks,
-      teamLeadRemarks: bookingData.teamLeadRemarks,
-      salesManagerRemarks: bookingData.salesManagerRemarks,
-      generalManagerRemarks: bookingData.generalManagerRemarks,
-      adminRemarks: bookingData.adminRemarks,
-    });
     
     setFormData({
       customerName: bookingData.customerName || '',
@@ -395,6 +384,22 @@ export function BookingUpdateScreen({ route }: BookingUpdateScreenProps): React.
 
       // Use the comprehensive updateBooking API
       const response = await bookingAPI.updateBooking(bookingId, updateData);
+      
+      // Update local booking state with the response data
+      if (response?.data) {
+        const updatedBooking = response.data;
+        setBooking(updatedBooking);
+        
+        // Update form data with the latest remarks from backend
+        setFormData(prev => ({
+          ...prev,
+          advisorRemarks: updatedBooking.advisorRemarks || '',
+          teamLeadRemarks: updatedBooking.teamLeadRemarks || '',
+          salesManagerRemarks: updatedBooking.salesManagerRemarks || '',
+          generalManagerRemarks: updatedBooking.generalManagerRemarks || '',
+          adminRemarks: updatedBooking.adminRemarks || '',
+        }));
+      }
       
       Alert.alert(
         'Success',
@@ -860,94 +865,145 @@ export function BookingUpdateScreen({ route }: BookingUpdateScreenProps): React.
             <Text variant="titleMedium" style={styles.cardTitle}>
               Remarks & Notes
             </Text>
+            <Text variant="bodySmall" style={styles.remarksSubtitle}>
+              Edit existing remarks or add new content. Previous remarks are preserved and you can build upon them.
+            </Text>
             
-            {/* Debug info */}
-            {__DEV__ && (
-              <Text style={{ fontSize: 10, color: '#666', marginBottom: 10 }}>
-                Debug - Form Data Remarks: {JSON.stringify({
-                  advisorRemarks: formData.advisorRemarks,
-                  teamLeadRemarks: formData.teamLeadRemarks,
-                  salesManagerRemarks: formData.salesManagerRemarks,
-                  generalManagerRemarks: formData.generalManagerRemarks,
-                  adminRemarks: formData.adminRemarks,
-                })}
-              </Text>
-            )}
             
             {/* Advisor Remarks - Always editable for CUSTOMER_ADVISOR */}
-            <TextInput
-              label={`Advisor Remarks ${formData.advisorRemarks ? `(${formData.advisorRemarks.length} chars)` : '(empty)'}`}
-              value={formData.advisorRemarks || ''}
-              onChangeText={(value) => handleTextChange('advisorRemarks', value)}
-              mode="outlined"
-              multiline
-              numberOfLines={3}
-              editable={canEditRemarks('advisorRemarks')}
-              style={styles.input}
-            />
-            {!canEditRemarks('advisorRemarks') && (
-              <HelperText type="info">Only Customer Advisors can edit advisor remarks</HelperText>
-            )}
+            <View style={styles.remarksContainer}>
+              <Text variant="bodyMedium" style={styles.remarksLabel}>
+                Advisor Remarks {formData.advisorRemarks ? `(${formData.advisorRemarks.length}/500 chars)` : '(empty)'}
+              </Text>
+              {formData.advisorRemarks && (
+                <Text variant="bodySmall" style={styles.existingContentLabel}>
+                  📝 Editing existing remarks - you can append to current content
+                </Text>
+              )}
+              <TextInput
+                label="Add or update advisor remarks"
+                value={formData.advisorRemarks || ''}
+                onChangeText={(value) => handleTextChange('advisorRemarks', value)}
+                mode="outlined"
+                multiline
+                numberOfLines={4}
+                editable={canEditRemarks('advisorRemarks')}
+                style={styles.input}
+                placeholder="Add your remarks here..."
+              />
+              {errors.advisorRemarks && <HelperText type="error">{errors.advisorRemarks}</HelperText>}
+              {!canEditRemarks('advisorRemarks') && (
+                <HelperText type="info">Only Customer Advisors can edit advisor remarks</HelperText>
+              )}
+            </View>
 
             {/* Team Lead Remarks */}
-            <TextInput
-              label={`Team Lead Remarks ${formData.teamLeadRemarks ? `(${formData.teamLeadRemarks.length} chars)` : '(empty)'}`}
-              value={formData.teamLeadRemarks || ''}
-              onChangeText={(value) => handleTextChange('teamLeadRemarks', value)}
-              mode="outlined"
-              multiline
-              numberOfLines={3}
-              editable={canEditRemarks('teamLeadRemarks')}
-              style={styles.input}
-            />
-            {!canEditRemarks('teamLeadRemarks') && (
-              <HelperText type="info">Only Team Leads can edit team lead remarks</HelperText>
-            )}
+            <View style={styles.remarksContainer}>
+              <Text variant="bodyMedium" style={styles.remarksLabel}>
+                Team Lead Remarks {formData.teamLeadRemarks ? `(${formData.teamLeadRemarks.length}/500 chars)` : '(empty)'}
+              </Text>
+              {formData.teamLeadRemarks && (
+                <Text variant="bodySmall" style={styles.existingContentLabel}>
+                  📝 Editing existing remarks - you can append to current content
+                </Text>
+              )}
+              <TextInput
+                label="Add or update team lead remarks"
+                value={formData.teamLeadRemarks || ''}
+                onChangeText={(value) => handleTextChange('teamLeadRemarks', value)}
+                mode="outlined"
+                multiline
+                numberOfLines={4}
+                editable={canEditRemarks('teamLeadRemarks')}
+                style={styles.input}
+                placeholder="Add your remarks here..."
+              />
+              {errors.teamLeadRemarks && <HelperText type="error">{errors.teamLeadRemarks}</HelperText>}
+              {!canEditRemarks('teamLeadRemarks') && (
+                <HelperText type="info">Only Team Leads can edit team lead remarks</HelperText>
+              )}
+            </View>
 
             {/* Sales Manager Remarks */}
-            <TextInput
-              label={`Sales Manager Remarks ${formData.salesManagerRemarks ? `(${formData.salesManagerRemarks.length} chars)` : '(empty)'}`}
-              value={formData.salesManagerRemarks || ''}
-              onChangeText={(value) => handleTextChange('salesManagerRemarks', value)}
-              mode="outlined"
-              multiline
-              numberOfLines={3}
-              editable={canEditRemarks('salesManagerRemarks')}
-              style={styles.input}
-            />
-            {!canEditRemarks('salesManagerRemarks') && (
-              <HelperText type="info">Only Sales Managers can edit sales manager remarks</HelperText>
-            )}
+            <View style={styles.remarksContainer}>
+              <Text variant="bodyMedium" style={styles.remarksLabel}>
+                Sales Manager Remarks {formData.salesManagerRemarks ? `(${formData.salesManagerRemarks.length}/500 chars)` : '(empty)'}
+              </Text>
+              {formData.salesManagerRemarks && (
+                <Text variant="bodySmall" style={styles.existingContentLabel}>
+                  📝 Editing existing remarks - you can append to current content
+                </Text>
+              )}
+              <TextInput
+                label="Add or update sales manager remarks"
+                value={formData.salesManagerRemarks || ''}
+                onChangeText={(value) => handleTextChange('salesManagerRemarks', value)}
+                mode="outlined"
+                multiline
+                numberOfLines={4}
+                editable={canEditRemarks('salesManagerRemarks')}
+                style={styles.input}
+                placeholder="Add your remarks here..."
+              />
+              {errors.salesManagerRemarks && <HelperText type="error">{errors.salesManagerRemarks}</HelperText>}
+              {!canEditRemarks('salesManagerRemarks') && (
+                <HelperText type="info">Only Sales Managers can edit sales manager remarks</HelperText>
+              )}
+            </View>
 
             {/* General Manager Remarks */}
-            <TextInput
-              label={`General Manager Remarks ${formData.generalManagerRemarks ? `(${formData.generalManagerRemarks.length} chars)` : '(empty)'}`}
-              value={formData.generalManagerRemarks || ''}
-              onChangeText={(value) => handleTextChange('generalManagerRemarks', value)}
-              mode="outlined"
-              multiline
-              numberOfLines={3}
-              editable={canEditRemarks('generalManagerRemarks')}
-              style={styles.input}
-            />
-            {!canEditRemarks('generalManagerRemarks') && (
-              <HelperText type="info">Only General Managers can edit general manager remarks</HelperText>
-            )}
+            <View style={styles.remarksContainer}>
+              <Text variant="bodyMedium" style={styles.remarksLabel}>
+                General Manager Remarks {formData.generalManagerRemarks ? `(${formData.generalManagerRemarks.length}/500 chars)` : '(empty)'}
+              </Text>
+              {formData.generalManagerRemarks && (
+                <Text variant="bodySmall" style={styles.existingContentLabel}>
+                  📝 Editing existing remarks - you can append to current content
+                </Text>
+              )}
+              <TextInput
+                label="Add or update general manager remarks"
+                value={formData.generalManagerRemarks || ''}
+                onChangeText={(value) => handleTextChange('generalManagerRemarks', value)}
+                mode="outlined"
+                multiline
+                numberOfLines={4}
+                editable={canEditRemarks('generalManagerRemarks')}
+                style={styles.input}
+                placeholder="Add your remarks here..."
+              />
+              {errors.generalManagerRemarks && <HelperText type="error">{errors.generalManagerRemarks}</HelperText>}
+              {!canEditRemarks('generalManagerRemarks') && (
+                <HelperText type="info">Only General Managers can edit general manager remarks</HelperText>
+              )}
+            </View>
 
             {/* Admin Remarks */}
-            <TextInput
-              label={`Admin Remarks ${formData.adminRemarks ? `(${formData.adminRemarks.length} chars)` : '(empty)'}`}
-              value={formData.adminRemarks || ''}
-              onChangeText={(value) => handleTextChange('adminRemarks', value)}
-              mode="outlined"
-              multiline
-              numberOfLines={3}
-              editable={canEditRemarks('adminRemarks')}
-              style={styles.input}
-            />
-            {!canEditRemarks('adminRemarks') && (
-              <HelperText type="info">Only Admins can edit admin remarks</HelperText>
-            )}
+            <View style={styles.remarksContainer}>
+              <Text variant="bodyMedium" style={styles.remarksLabel}>
+                Admin Remarks {formData.adminRemarks ? `(${formData.adminRemarks.length}/500 chars)` : '(empty)'}
+              </Text>
+              {formData.adminRemarks && (
+                <Text variant="bodySmall" style={styles.existingContentLabel}>
+                  📝 Editing existing remarks - you can append to current content
+                </Text>
+              )}
+              <TextInput
+                label="Add or update admin remarks"
+                value={formData.adminRemarks || ''}
+                onChangeText={(value) => handleTextChange('adminRemarks', value)}
+                mode="outlined"
+                multiline
+                numberOfLines={4}
+                editable={canEditRemarks('adminRemarks')}
+                style={styles.input}
+                placeholder="Add your remarks here..."
+              />
+              {errors.adminRemarks && <HelperText type="error">{errors.adminRemarks}</HelperText>}
+              {!canEditRemarks('adminRemarks') && (
+                <HelperText type="info">Only Admins can edit admin remarks</HelperText>
+              )}
+            </View>
           </Card.Content>
         </Card>
 
@@ -1102,5 +1158,31 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     paddingVertical: 12,
+  },
+  remarksSubtitle: {
+    color: '#64748B',
+    marginBottom: 16,
+    fontStyle: 'italic',
+  },
+  remarksContainer: {
+    marginBottom: 20,
+    paddingBottom: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F1F5F9',
+  },
+  remarksLabel: {
+    fontWeight: '600',
+    color: '#374151',
+    marginBottom: 4,
+  },
+  existingContentLabel: {
+    color: '#3B82F6',
+    fontWeight: '500',
+    marginBottom: 8,
+    backgroundColor: '#EFF6FF',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+    alignSelf: 'flex-start',
   },
 });
