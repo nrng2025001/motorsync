@@ -115,19 +115,40 @@ export function BookingUpdateScreen({ route }: BookingUpdateScreenProps): React.
   const isFieldEditable = (fieldName: keyof Booking, currentValue: any): boolean => {
     if (!booking) return false;
     
-    // Customer Advisors can edit ALL booking fields
-    if (userRole === 'CUSTOMER_ADVISOR') {
-      return true;
+    // Prefilled fields that should NEVER be editable by anyone (customer info, vehicle info, dealer info)
+    const prefilledFields = [
+      'customerName', 'customerPhone', 'customerEmail', 
+      'variant', 'vcCode', 'color', 'fuelType', 'transmission',
+      'dealerCode', 'zone', 'region', 'advisorId'
+    ];
+    
+    if (prefilledFields.includes(fieldName as string)) {
+      return false; // Always read-only
     }
     
-    // Higher-level roles (Team Lead, Sales Manager, General Manager, Admin) can ONLY edit their respective remarks
+    // Remarks fields - role-based editing
     const remarksFields = ['advisorRemarks', 'teamLeadRemarks', 'salesManagerRemarks', 'generalManagerRemarks', 'adminRemarks'];
     if (remarksFields.includes(fieldName as string)) {
       return canEditRemarks(fieldName as string);
     }
     
-    // ALL other fields are strictly read-only for higher-level roles
-    return false;
+    // Advisor-only fields - only Customer Advisors can edit these
+    const advisorOnlyFields = [
+      'bookingDate', 'expectedDeliveryDate', 'financeRequired', 'financerName',
+      'fileLoginDate', 'approvalDate', 'stockAvailability', 'backOrderStatus', 'rtoDate'
+    ];
+    
+    if (advisorOnlyFields.includes(fieldName as string)) {
+      return userRole === 'CUSTOMER_ADVISOR';
+    }
+    
+    // Status field - only Customer Advisors can edit
+    if (fieldName === 'status') {
+      return userRole === 'CUSTOMER_ADVISOR';
+    }
+    
+    // All other fields are read-only for higher-level roles
+    return userRole === 'CUSTOMER_ADVISOR';
   };
 
   // Helper function to check if user can edit remarks
@@ -265,20 +286,9 @@ export function BookingUpdateScreen({ route }: BookingUpdateScreenProps): React.
     const newErrors: Record<string, string> = {};
 
     if (userRole === 'CUSTOMER_ADVISOR') {
-      // Customer Advisors - validate all booking fields
-      if (!formData.customerName?.trim()) {
-        newErrors.customerName = 'Customer name is required';
-      }
-
-      if (!formData.customerPhone?.trim()) {
-        newErrors.customerPhone = 'Customer phone is required';
-      }
-
-      if (!formData.variant?.trim()) {
-        newErrors.variant = 'Vehicle variant is required';
-      }
-
-      // Date validation
+      // Customer Advisors - validate advisor-only fields
+      
+      // Date validation for advisor-only fields
       if (formData.expectedDeliveryDate) {
         const deliveryDate = new Date(formData.expectedDeliveryDate);
         const today = new Date();
@@ -295,14 +305,14 @@ export function BookingUpdateScreen({ route }: BookingUpdateScreenProps): React.
         }
       }
 
-      // Finance validation
+      // Finance validation for advisor-only fields
       if (formData.financeRequired && !formData.financerName?.trim()) {
         newErrors.financerName = 'Financer name is required when finance is needed';
       }
 
-      // Email validation
-      if (formData.customerEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.customerEmail)) {
-        newErrors.customerEmail = 'Please enter a valid email address';
+      // Validate advisor remarks
+      if (formData.advisorRemarks && formData.advisorRemarks.trim().length > 500) {
+        newErrors.advisorRemarks = 'Advisor remarks cannot exceed 500 characters';
       }
     } else {
       // Higher-level roles - only validate their remarks field
@@ -334,15 +344,44 @@ export function BookingUpdateScreen({ route }: BookingUpdateScreenProps): React.
       let updateData: any = {};
       
       if (userRole === 'CUSTOMER_ADVISOR') {
-        // Customer Advisors can update all fields
-        updateData = Object.fromEntries(
-          Object.entries(formData).filter(([_, value]) => value !== undefined)
-        );
+        // Customer Advisors can update advisor-only fields and their remarks
+        const advisorOnlyFields = [
+          'bookingDate', 'expectedDeliveryDate', 'financeRequired', 'financerName',
+          'fileLoginDate', 'approvalDate', 'stockAvailability', 'backOrderStatus', 'rtoDate', 'status'
+        ];
         
-        // Format expectedDeliveryDate as YYYY-MM-DD if present
+        // Include advisor-only fields that have values
+        advisorOnlyFields.forEach(field => {
+          if (formData[field as keyof typeof formData] !== undefined && formData[field as keyof typeof formData] !== '') {
+            updateData[field] = formData[field as keyof typeof formData];
+          }
+        });
+        
+        // Include advisor remarks
+        if (formData.advisorRemarks) {
+          updateData.advisorRemarks = formData.advisorRemarks;
+        }
+        
+        // Format dates as YYYY-MM-DD if present
         if (updateData.expectedDeliveryDate && typeof updateData.expectedDeliveryDate === 'string') {
           const date = new Date(updateData.expectedDeliveryDate);
           updateData.expectedDeliveryDate = date.toISOString().split('T')[0];
+        }
+        if (updateData.bookingDate && typeof updateData.bookingDate === 'string') {
+          const date = new Date(updateData.bookingDate);
+          updateData.bookingDate = date.toISOString().split('T')[0];
+        }
+        if (updateData.fileLoginDate && typeof updateData.fileLoginDate === 'string') {
+          const date = new Date(updateData.fileLoginDate);
+          updateData.fileLoginDate = date.toISOString().split('T')[0];
+        }
+        if (updateData.approvalDate && typeof updateData.approvalDate === 'string') {
+          const date = new Date(updateData.approvalDate);
+          updateData.approvalDate = date.toISOString().split('T')[0];
+        }
+        if (updateData.rtoDate && typeof updateData.rtoDate === 'string') {
+          const date = new Date(updateData.rtoDate);
+          updateData.rtoDate = date.toISOString().split('T')[0];
         }
       } else {
         // Higher-level roles can only update their respective remarks
@@ -521,7 +560,7 @@ export function BookingUpdateScreen({ route }: BookingUpdateScreenProps): React.
             />
             {errors.customerName && <HelperText type="error">{errors.customerName}</HelperText>}
             {!isFieldEditable('customerName', booking?.customerName) && (
-              <HelperText type="info">Customer name is already set and cannot be changed</HelperText>
+              <HelperText type="info">Customer information is read-only for all roles</HelperText>
             )}
 
             <TextInput
@@ -536,7 +575,7 @@ export function BookingUpdateScreen({ route }: BookingUpdateScreenProps): React.
             />
             {errors.customerPhone && <HelperText type="error">{errors.customerPhone}</HelperText>}
             {!isFieldEditable('customerPhone', booking?.customerPhone) && (
-              <HelperText type="info">Customer phone is already set and cannot be changed</HelperText>
+              <HelperText type="info">Customer information is read-only for all roles</HelperText>
             )}
 
             <TextInput
@@ -551,7 +590,7 @@ export function BookingUpdateScreen({ route }: BookingUpdateScreenProps): React.
             />
             {errors.customerEmail && <HelperText type="error">{errors.customerEmail}</HelperText>}
             {!isFieldEditable('customerEmail', booking?.customerEmail) && (
-              <HelperText type="info">Customer email is already set and cannot be changed</HelperText>
+              <HelperText type="info">Customer information is read-only for all roles</HelperText>
             )}
           </Card.Content>
         </Card>
@@ -574,7 +613,7 @@ export function BookingUpdateScreen({ route }: BookingUpdateScreenProps): React.
             />
             {errors.variant && <HelperText type="error">{errors.variant}</HelperText>}
             {!isFieldEditable('variant', booking?.variant) && (
-              <HelperText type="info">Vehicle variant is already set and cannot be changed</HelperText>
+              <HelperText type="info">Vehicle information is read-only for all roles</HelperText>
             )}
 
             <TextInput
@@ -586,7 +625,7 @@ export function BookingUpdateScreen({ route }: BookingUpdateScreenProps): React.
               style={styles.input}
             />
             {!isFieldEditable('vcCode', booking?.vcCode) && (
-              <HelperText type="info">VC Code is already set and cannot be changed</HelperText>
+              <HelperText type="info">Vehicle information is read-only for all roles</HelperText>
             )}
 
             <TextInput
@@ -598,7 +637,7 @@ export function BookingUpdateScreen({ route }: BookingUpdateScreenProps): React.
               style={styles.input}
             />
             {!isFieldEditable('color', booking?.color) && (
-              <HelperText type="info">Color is already set and cannot be changed</HelperText>
+              <HelperText type="info">Vehicle information is read-only for all roles</HelperText>
             )}
 
             <TextInput
@@ -610,7 +649,7 @@ export function BookingUpdateScreen({ route }: BookingUpdateScreenProps): React.
               style={styles.input}
             />
             {!isFieldEditable('fuelType', booking?.fuelType) && (
-              <HelperText type="info">Fuel type is already set and cannot be changed</HelperText>
+              <HelperText type="info">Vehicle information is read-only for all roles</HelperText>
             )}
 
             <TextInput
@@ -622,7 +661,7 @@ export function BookingUpdateScreen({ route }: BookingUpdateScreenProps): React.
               style={styles.input}
             />
             {!isFieldEditable('transmission', booking?.transmission) && (
-              <HelperText type="info">Transmission is already set and cannot be changed</HelperText>
+              <HelperText type="info">Vehicle information is read-only for all roles</HelperText>
             )}
           </Card.Content>
         </Card>
@@ -643,7 +682,7 @@ export function BookingUpdateScreen({ route }: BookingUpdateScreenProps): React.
               style={styles.input}
             />
             {!isFieldEditable('dealerCode', formData.dealerCode) && (
-              <HelperText type="info">Dealer code is already set and cannot be changed</HelperText>
+              <HelperText type="info">Dealer information is read-only for all roles</HelperText>
             )}
 
             <TextInput
@@ -655,7 +694,7 @@ export function BookingUpdateScreen({ route }: BookingUpdateScreenProps): React.
               style={styles.input}
             />
             {!isFieldEditable('zone', formData.zone) && (
-              <HelperText type="info">Zone is already set and cannot be changed</HelperText>
+              <HelperText type="info">Dealer information is read-only for all roles</HelperText>
             )}
 
             <TextInput
@@ -667,7 +706,7 @@ export function BookingUpdateScreen({ route }: BookingUpdateScreenProps): React.
               style={styles.input}
             />
             {!isFieldEditable('region', formData.region) && (
-              <HelperText type="info">Region is already set and cannot be changed</HelperText>
+              <HelperText type="info">Dealer information is read-only for all roles</HelperText>
             )}
           </Card.Content>
         </Card>
@@ -688,7 +727,7 @@ export function BookingUpdateScreen({ route }: BookingUpdateScreenProps): React.
               style={styles.input}
             />
             {!isFieldEditable('advisorId', booking?.advisorId) && (
-              <HelperText type="info">Advisor ID is already set and cannot be changed</HelperText>
+              <HelperText type="info">Advisor information is read-only for all roles</HelperText>
             )}
 
             <DatePickerISO
@@ -703,7 +742,7 @@ export function BookingUpdateScreen({ route }: BookingUpdateScreenProps): React.
               <HelperText type="error">{errors.bookingDate}</HelperText>
             )}
             {!isFieldEditable('bookingDate', booking?.bookingDate) && (
-              <HelperText type="info">Booking date is already set and cannot be changed</HelperText>
+              <HelperText type="info">Only Customer Advisors can edit booking dates</HelperText>
             )}
           </Card.Content>
         </Card>
@@ -727,6 +766,9 @@ export function BookingUpdateScreen({ route }: BookingUpdateScreenProps): React.
             />
             {errors.expectedDeliveryDate && (
               <HelperText type="error">{errors.expectedDeliveryDate}</HelperText>
+            )}
+            {!isFieldEditable('expectedDeliveryDate', formData.expectedDeliveryDate) && (
+              <HelperText type="info">Only Customer Advisors can edit delivery dates</HelperText>
             )}
 
           </Card.Content>
