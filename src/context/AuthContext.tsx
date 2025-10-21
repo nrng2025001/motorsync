@@ -242,7 +242,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             console.log('   Full response:', JSON.stringify(userProfile, null, 2));
             
             // Check the actual structure
-            const actualUser = userProfile.user || userProfile;
+            const actualUser = (userProfile as any).user || userProfile;
             console.log('   Role:', actualUser.role?.name);
             console.log('   Dealership:', actualUser.dealership?.name);
             console.log('   Employee ID:', actualUser.employeeId);
@@ -434,7 +434,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     logout,
     clearError,
     refreshProfile,
-    dealership: state.user?.dealership,
+    dealership: state.user?.dealership as any || undefined,
     isAdmin: state.user?.role?.name === 'ADMIN' || state.user?.role?.name === 'GENERAL_MANAGER',
   };
 

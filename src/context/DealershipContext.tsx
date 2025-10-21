@@ -51,7 +51,7 @@ export const DealershipProvider: React.FC<DealershipProviderProps> = ({ children
       const response = await handleApiCall(() =>
         apiClient.get<any>('/dealerships', { params: { id: dealershipId } })
       );
-      const found = (response?.dealerships || response?.data || []).find((d: any) => d.id === dealershipId) || null;
+      const found = ((response as any)?.dealerships || (response as any)?.data || []).find((d: any) => d.id === dealershipId) || null;
       setDealership(found);
     } catch (error) {
       console.error('Failed to load dealership:', error);
