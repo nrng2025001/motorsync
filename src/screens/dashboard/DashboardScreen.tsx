@@ -500,28 +500,38 @@ export function DashboardScreen({ navigation }: any): React.JSX.Element {
 
         {/* Bookings Section */}
         <View style={styles.section}>
-          <View style={styles.bookingsHeader}>
-            <View style={styles.bookingsHeaderLeft}>
-              <View style={styles.bookingsIconContainer}>
-                <Icon source="bookmark-multiple" size={24} color="#3B82F6" />
+          <Text style={styles.sectionTitle}>
+            Bookings Overview
+          </Text>
+          <Text style={styles.sectionSubtitle}>
+            Track and manage vehicle bookings
+          </Text>
+          
+          {/* Total Bookings Card */}
+          <View style={styles.totalBookingsCard}>
+            <View style={styles.totalBookingsContent}>
+              <View style={styles.totalBookingsLeft}>
+                <View style={styles.totalBookingsIconContainer}>
+                  <Icon source="bookmark-multiple" size={24} color="#3B82F6" />
+                </View>
+                <View style={styles.totalBookingsText}>
+                  <Text style={styles.totalBookingsLabel}>
+                    Total Bookings
+                  </Text>
+                  <Text style={styles.totalBookingsCount}>
+                    {dashboardData.bookings.total}
+                  </Text>
+                </View>
               </View>
-              <View style={styles.bookingsHeaderText}>
-                <Text style={styles.bookingsHeaderTitle}>
-                  Total Bookings
+              <TouchableOpacity 
+                style={styles.viewAllButton}
+                onPress={() => navigation.navigate('Bookings', { initialFilter: 'all' })}
+              >
+                <Text style={styles.viewAllButtonText}>
+                  View All {'>'}
                 </Text>
-                <Text style={styles.bookingsHeaderCount}>
-                  {dashboardData.bookings.total}
-                </Text>
-              </View>
+              </TouchableOpacity>
             </View>
-            <TouchableOpacity 
-              style={styles.viewAllButton}
-              onPress={() => navigation.navigate('Bookings', { initialFilter: 'all' })}
-            >
-              <Text style={styles.viewAllButtonText}>
-                View All {'>'}
-              </Text>
-            </TouchableOpacity>
           </View>
           
           <Text style={styles.sectionTitle}>
@@ -1281,6 +1291,52 @@ const styles = StyleSheet.create({
     fontSize: 32,
     fontWeight: '700',
     color: '#FF6F00',
+  },
+  totalBookingsCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    padding: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 2,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  totalBookingsContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+  },
+  totalBookingsLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+  },
+  totalBookingsIconContainer: {
+    width: 40,
+    height: 40,
+    borderRadius: 8,
+    backgroundColor: '#E0F2FE',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 12,
+  },
+  totalBookingsText: {
+    flex: 1,
+  },
+  totalBookingsLabel: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#0F172A',
+    marginBottom: 4,
+  },
+  totalBookingsCount: {
+    fontSize: 32,
+    fontWeight: '700',
+    color: '#3B82F6',
   },
   viewAllButton: {
     backgroundColor: '#F8FAFC',
