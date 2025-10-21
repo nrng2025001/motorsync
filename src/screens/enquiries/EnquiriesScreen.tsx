@@ -31,7 +31,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { StackNavigationProp } from '@react-navigation/stack';
 import { LinearGradient as ExpoLinearGradient } from 'expo-linear-gradient';
-import Svg, { Path, Rect, Defs, LinearGradient, Stop, G, Ellipse, Circle } from 'react-native-svg';
+// SVG imports removed as background pattern is no longer used
 
 import { EnquiryCard } from '../../components/EnquiryCard';
 import * as EnquiryService from '../../services/enquiry.service';
@@ -45,45 +45,7 @@ const { width, height } = Dimensions.get('window');
 
 type NavigationProp = StackNavigationProp<MainStackParamList>;
 
-/**
- * Enhanced Background Pattern with Animated Elements
- */
-const BackgroundPattern = () => (
-  <View style={styles.backgroundPatternContainer}>
-    <Svg height={height} width={width} style={styles.backgroundSvg}>
-      <Defs>
-        <LinearGradient id="bgGradient" x1="0%" y1="0%" x2="100%" y2="100%">
-          <Stop offset="0%" stopColor="#EFF6FF" stopOpacity="1" />
-          <Stop offset="50%" stopColor="#DBEAFE" stopOpacity="0.5" />
-          <Stop offset="100%" stopColor="#BFDBFE" stopOpacity="0.3" />
-        </LinearGradient>
-        <LinearGradient id="orb1" x1="0%" y1="0%" x2="100%" y2="100%">
-          <Stop offset="0%" stopColor="#3B82F6" stopOpacity="0.1" />
-          <Stop offset="100%" stopColor="#2563EB" stopOpacity="0.05" />
-        </LinearGradient>
-        <LinearGradient id="orb2" x1="0%" y1="0%" x2="100%" y2="100%">
-          <Stop offset="0%" stopColor="#6366F1" stopOpacity="0.08" />
-          <Stop offset="100%" stopColor="#4F46E5" stopOpacity="0.04" />
-        </LinearGradient>
-      </Defs>
-      <Rect width="100%" height="100%" fill="url(#bgGradient)" />
-      
-      {/* Decorative floating orbs with gradients */}
-      <G opacity="1">
-        <Circle cx={width * 0.2} cy={height * 0.15} r="120" fill="url(#orb1)" />
-        <Circle cx={width * 0.85} cy={height * 0.25} r="160" fill="url(#orb2)" />
-        <Circle cx={width * 0.5} cy={height * 0.85} r="100" fill="url(#orb1)" />
-        <Circle cx={width * 0.1} cy={height * 0.7} r="80" fill="url(#orb2)" />
-      </G>
-      
-      {/* Decorative accent shapes */}
-      <G opacity="0.06">
-        <Rect x={width * 0.7} y={height * 0.5} width="60" height="60" rx="12" fill="#3B82F6" />
-        <Rect x={width * 0.15} y={height * 0.4} width="40" height="40" rx="8" fill="#6366F1" />
-      </G>
-    </Svg>
-  </View>
-);
+// Background pattern component removed to fix overlay issues
 
 export function EnquiriesScreen(): React.JSX.Element {
   const navigation = useNavigation<NavigationProp>();
@@ -111,7 +73,19 @@ export function EnquiriesScreen(): React.JSX.Element {
 
   // Role-based permission functions
   const canCreateEnquiry = () => {
-    return ['CUSTOMER_ADVISOR', 'TEAM_LEAD', 'SALES_MANAGER', 'GENERAL_MANAGER'].includes(userRole);
+    // Check if user has a valid role and is authorized to create enquiries
+    const hasValidRole = authState.user?.role?.name && 
+      ['CUSTOMER_ADVISOR', 'TEAM_LEAD', 'SALES_MANAGER', 'GENERAL_MANAGER'].includes(userRole);
+    
+    console.log('🔍 FAB Visibility Check:', {
+      hasUser: !!authState.user,
+      hasRole: !!authState.user?.role,
+      roleName: authState.user?.role?.name,
+      userRole,
+      canCreate: hasValidRole
+    });
+    
+    return hasValidRole;
   };
 
   const canEditEnquiry = (enquiry: Enquiry) => {
@@ -527,7 +501,7 @@ export function EnquiriesScreen(): React.JSX.Element {
         <Text variant="bodyMedium" style={styles.emptyMessage}>
           {content.message}
         </Text>
-        {authState.user?.role && (
+        {canCreateEnquiry() && (
           <TouchableOpacity 
             style={[styles.emptyActionButton, { backgroundColor: content.color }]}
             onPress={() => navigation.navigate('NewEnquiry')}
@@ -576,18 +550,13 @@ export function EnquiriesScreen(): React.JSX.Element {
 
   return (
     <View style={styles.container}>
-      {/* Enhanced Gradient Background */}
+      {/* Simplified Background - Single gradient only */}
       <ExpoLinearGradient
-        colors={['#FFFFFF', '#F0F9FF', '#E0F2FE']}
+        colors={['#F8FAFC', '#E2E8F0', '#F1F5F9']}
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 1 }}
         style={styles.gradientBackground}
       />
-      
-      {/* Background Pattern Overlay */}
-      <View style={styles.backgroundContainer}>
-        <BackgroundPattern />
-      </View>
 
       <SafeAreaView style={styles.safeArea} edges={['top']}>
         {/* Enhanced Header */}
@@ -623,77 +592,7 @@ export function EnquiriesScreen(): React.JSX.Element {
             />
           </View>
 
-          {/* Enhanced Filter Controls */}
-          <View style={styles.filterControls}>
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              style={styles.filterScrollView}
-              contentContainerStyle={styles.filterScrollContent}
-            >
-              {/* Status Filter */}
-              <Menu
-                visible={showStatusMenu}
-                onDismiss={() => setShowStatusMenu(false)}
-                anchor={
-                  <Button
-                    mode="outlined"
-                    onPress={() => setShowStatusMenu(true)}
-                    style={styles.filterButton}
-                    contentStyle={styles.filterButtonContent}
-                    icon="filter-variant"
-                  >
-                    Status: {selectedStatus}
-                  </Button>
-                }
-              >
-                <Menu.Item onPress={() => { setSelectedStatus('ALL'); setShowStatusMenu(false); }} title="All Status" />
-                <Menu.Item onPress={() => { setSelectedStatus(EnquiryStatus.OPEN); setShowStatusMenu(false); }} title="Open" />
-                <Menu.Item onPress={() => { setSelectedStatus(EnquiryStatus.CONTACTED); setShowStatusMenu(false); }} title="Contacted" />
-                <Menu.Item onPress={() => { setSelectedStatus(EnquiryStatus.QUALIFIED); setShowStatusMenu(false); }} title="Qualified" />
-                <Menu.Item onPress={() => { setSelectedStatus(EnquiryStatus.CONVERTED); setShowStatusMenu(false); }} title="Converted" />
-                <Menu.Item onPress={() => { setSelectedStatus(EnquiryStatus.CLOSED); setShowStatusMenu(false); }} title="Closed" />
-              </Menu>
-
-              {/* Sort Options */}
-              <Menu
-                visible={showFilterMenu}
-                onDismiss={() => setShowFilterMenu(false)}
-                anchor={
-                  <Button
-                    mode="outlined"
-                    onPress={() => setShowFilterMenu(true)}
-                    style={styles.filterButton}
-                    contentStyle={styles.filterButtonContent}
-                    icon="sort"
-                  >
-                    Sort: {sortBy}
-                  </Button>
-                }
-              >
-                <Menu.Item onPress={() => { setSortBy('createdAt'); setShowFilterMenu(false); }} title="Date" />
-                <Menu.Item onPress={() => { setSortBy('customerName'); setShowFilterMenu(false); }} title="Name" />
-                <Menu.Item onPress={() => { setSortBy('status'); setShowFilterMenu(false); }} title="Status" />
-                <Menu.Item onPress={() => { setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc'); setShowFilterMenu(false); }} title={`Order: ${sortOrder.toUpperCase()}`} />
-              </Menu>
-
-              {/* Clear Filters */}
-              {(selectedStatus !== 'ALL' || searchQuery.trim() || selectedCategory !== 'ALL') && (
-                <Button
-                  mode="text"
-                  onPress={() => {
-                    setSelectedStatus('ALL');
-                    setSearchQuery('');
-                    setSelectedCategory(EnquiryCategory.HOT);
-                  }}
-                  style={styles.clearFiltersButton}
-                  icon="close"
-                >
-                  Clear
-                </Button>
-              )}
-            </ScrollView>
-          </View>
+          {/* Filter controls removed for simplified UI */}
           
           <ScrollView
             horizontal
@@ -787,18 +686,6 @@ export function EnquiriesScreen(): React.JSX.Element {
             color="#FFFFFF"
           />
         )}
-        
-        {/* Debug info */}
-        {__DEV__ && (
-          <View style={{ position: 'absolute', top: 100, left: 20, backgroundColor: 'rgba(0,0,0,0.8)', padding: 10, borderRadius: 5 }}>
-            <Text style={{ color: 'white', fontSize: 12 }}>
-              Role: {authState.user?.role?.name || 'undefined'}
-            </Text>
-            <Text style={{ color: 'white', fontSize: 12 }}>
-              FAB Visible: {authState.user?.role ? 'YES' : 'NO'}
-            </Text>
-          </View>
-        )}
 
         {/* Enhanced Snackbar */}
         <Snackbar
@@ -827,6 +714,7 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#FFFFFF',
+    zIndex: 0,
   },
   gradientBackground: {
     position: 'absolute',
@@ -834,36 +722,20 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
-  },
-  backgroundPatternContainer: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-  },
-  backgroundContainer: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-  },
-  backgroundSvg: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
+    zIndex: 0,
   },
   safeArea: {
     flex: 1,
+    zIndex: 1,
   },
   header: {
     paddingHorizontal: 24,
     paddingTop: 20,
     paddingBottom: 20,
-    backgroundColor: 'rgba(255, 255, 255, 0.95)',
+    backgroundColor: '#FFFFFF',
     borderBottomWidth: 1,
-    borderBottomColor: 'rgba(226, 232, 240, 0.5)',
+    borderBottomColor: '#E2E8F0',
+    zIndex: 2,
   },
   headerTop: {
     flexDirection: 'row',
@@ -975,6 +847,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 24,
     marginTop: 20,
     marginBottom: 16,
+    zIndex: 1,
   },
   searchContainer: {
     marginBottom: 12,
@@ -1007,6 +880,7 @@ const styles = StyleSheet.create({
   },
   scrollView: {
     flex: 1,
+    zIndex: 1,
   },
   scrollContent: {
     paddingTop: 8,
