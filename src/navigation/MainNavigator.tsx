@@ -32,14 +32,10 @@ import { theme } from '../utils/theme';
 export type MainTabParamList = {
   Dashboard: undefined;
   Enquiries: undefined;
-  Quotations: undefined;
-  QuotationGenerator: undefined;
-  Bookings: undefined;
-  Team: undefined;
   AIAssistant: undefined;
+  QuotationGenerator: undefined;
   Profile: undefined;
   BackendTest: undefined;
-  Stock: undefined;
 };
 
 /**
@@ -77,8 +73,8 @@ function getTabsForRole(role: UserRole) {
   const baseTabs: Array<{ name: keyof MainTabParamList; icon: string; label: string }> = [
     { name: 'Dashboard', icon: 'view-dashboard', label: 'Dashboard' },
     { name: 'Enquiries', icon: 'account-group', label: 'Enquiries' },
-    { name: 'Bookings', icon: 'calendar-check', label: 'Bookings' },
-    { name: 'Stock', icon: 'car', label: 'Stock' },
+    { name: 'AIAssistant', icon: 'robot', label: 'AI Assistant' },
+    { name: 'QuotationGenerator', icon: 'file-document', label: 'Quotations' },
     { name: 'Profile', icon: 'account', label: 'Profile' },
   ];
 
@@ -164,10 +160,6 @@ function getScreenComponent(tabName: string) {
       return DashboardScreen;
     case 'Enquiries':
       return EnquiriesScreen;
-    case 'Bookings':
-      return BookingsScreen;
-    case 'Stock':
-      return StockScreen;
     case 'AIAssistant':
       return AIAssistantScreen;
     case 'QuotationGenerator':
