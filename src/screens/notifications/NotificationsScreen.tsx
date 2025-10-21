@@ -1,459 +1,387 @@
+/**
+ * Notifications Screen
+ * Displays notification history, statistics, and management options
+ */
+
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
   StyleSheet,
-  ScrollView,
-  RefreshControl,
-  Alert,
+  FlatList,
   TouchableOpacity,
-  ActivityIndicator,
+  Alert,
+  RefreshControl,
+  Dimensions,
 } from 'react-native';
 import {
   Text,
   Card,
-  Button,
   Chip,
-  Icon,
+  FAB,
+  Searchbar,
+  Menu,
+  Button,
+  IconButton,
   Divider,
+  ActivityIndicator,
+  Snackbar,
 } from 'react-native-paper';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useNavigation } from '@react-navigation/native';
+import { StackNavigationProp } from '@react-navigation/stack';
+import { LinearGradient } from 'expo-linear-gradient';
 
-import { useAuth } from '../../context/AuthContext';
-import { theme, spacing } from '../../utils/theme';
+import { useNotifications } from '../../context/NotificationContext';
+import { Notification } from '../../services/NotificationAPI';
+import { MainStackParamList } from '../../navigation/MainNavigator';
+import { theme, spacing, shadows, borderRadius } from '../../utils/theme';
 
-/**
- * Notification types
- */
-type NotificationType = 'enquiry' | 'quotation' | 'reminder' | 'system' | 'performance';
+const { width } = Dimensions.get('window');
 
-/**
- * Notification interface
- */
-interface Notification {
-  id: string;
-  type: NotificationType;
-  title: string;
-  message: string;
-  timestamp: string;
-  isRead: boolean;
-  priority: 'low' | 'medium' | 'high';
-  actionRequired?: boolean;
-  relatedId?: string; // ID of related enquiry, quotation, etc.
-}
+type NavigationProp = StackNavigationProp<MainStackParamList>;
 
-/**
- * Notifications state interface
- */
-interface NotificationsState {
-  data: Notification[];
-  loading: boolean;
-  error: string | null;
-}
-
-/**
- * Get notification icon based on type
- */
-function getNotificationIcon(type: NotificationType): string {
-  switch (type) {
-    case 'enquiry':
-      return 'account-plus';
-    case 'quotation':
-      return 'file-document';
-    case 'reminder':
-      return 'clock-alert';
-    case 'system':
-      return 'cog';
-    case 'performance':
-      return 'chart-line';
-    default:
-      return 'bell';
-  }
-}
-
-/**
- * Get priority color
- */
-function getPriorityColor(priority: 'low' | 'medium' | 'high'): string {
-  switch (priority) {
-    case 'high':
-      return theme.colors.error;
-    case 'medium':
-      return theme.colors.warning;
-    case 'low':
-      return theme.colors.success;
-    default:
-      return theme.colors.outline;
-  }
-}
-
-/**
- * Get type color
- */
-function getTypeColor(type: NotificationType): string {
-  switch (type) {
-    case 'enquiry':
-      return theme.colors.tertiary;
-    case 'quotation':
-      return theme.colors.primary;
-    case 'reminder':
-      return theme.colors.warning;
-    case 'system':
-      return theme.colors.onSurfaceVariant;
-    case 'performance':
-      return theme.colors.success;
-    default:
-      return theme.colors.outline;
-  }
-}
-
-/**
- * Placeholder API function for fetching notifications
- * TODO: Replace with actual API call
- */
-const fetchNotificationsFromAPI = async (): Promise<Notification[]> => {
-  // Simulate API delay
-  await new Promise(resolve => setTimeout(resolve, 1000));
-  
-  // Return empty array for now - replace with actual API call
-  return [];
+const NOTIFICATION_TYPES = {
+  FOLLOW_UP_ENQUIRY: 'follow_up_enquiry',
+  FOLLOW_UP_BOOKING: 'follow_up_booking',
+  URGENT_ENQUIRY: 'urgent_enquiry',
+  URGENT_BOOKING: 'urgent_booking',
+  DELIVERY_REMINDER: 'delivery_reminder',
+  EVENING_REMINDER: 'evening_reminder',
+  WEEKLY_SUMMARY: 'weekly_summary',
+  ASSIGNMENT_UPDATE: 'assignment_update',
+  TEST: 'test'
 };
 
-/**
- * Notifications Screen Component
- * Displays notifications and reminders - can be opened from dashboard
- */
-export function NotificationsScreen({ navigation }: any): React.JSX.Element {
-  const { state } = useAuth();
-  const [notificationsState, setNotificationsState] = useState<NotificationsState>({
-    data: [],
-    loading: true,
-    error: null,
-  });
-  const [refreshing, setRefreshing] = useState(false);
+const getTypeDisplayName = (type: string): string => {
+  const typeMap: Record<string, string> = {
+    [NOTIFICATION_TYPES.FOLLOW_UP_ENQUIRY]: 'Follow-up Enquiry',
+    [NOTIFICATION_TYPES.FOLLOW_UP_BOOKING]: 'Follow-up Booking',
+    [NOTIFICATION_TYPES.URGENT_ENQUIRY]: 'Urgent Enquiry',
+    [NOTIFICATION_TYPES.URGENT_BOOKING]: 'Urgent Booking',
+    [NOTIFICATION_TYPES.DELIVERY_REMINDER]: 'Delivery Reminder',
+    [NOTIFICATION_TYPES.EVENING_REMINDER]: 'Evening Reminder',
+    [NOTIFICATION_TYPES.WEEKLY_SUMMARY]: 'Weekly Summary',
+    [NOTIFICATION_TYPES.ASSIGNMENT_UPDATE]: 'Assignment Update',
+    [NOTIFICATION_TYPES.TEST]: 'Test Notification',
+  };
+  return typeMap[type] || type;
+};
 
-  /**
-   * Fetch notifications from API
-   */
-  const fetchNotifications = useCallback(async () => {
-    try {
-      setNotificationsState(prev => ({ ...prev, loading: true, error: null }));
-      const data = await fetchNotificationsFromAPI();
-      setNotificationsState({ data, loading: false, error: null });
-    } catch (error) {
-      setNotificationsState(prev => ({
-        ...prev,
-        loading: false,
-        error: error instanceof Error ? error.message : 'Failed to fetch notifications',
-      }));
-    }
-  }, []);
+const getTypeColor = (type: string): string => {
+  const colorMap: Record<string, string> = {
+    [NOTIFICATION_TYPES.FOLLOW_UP_ENQUIRY]: '#4CAF50',
+    [NOTIFICATION_TYPES.FOLLOW_UP_BOOKING]: '#2196F3',
+    [NOTIFICATION_TYPES.URGENT_ENQUIRY]: '#FF9800',
+    [NOTIFICATION_TYPES.URGENT_BOOKING]: '#F44336',
+    [NOTIFICATION_TYPES.DELIVERY_REMINDER]: '#9C27B0',
+    [NOTIFICATION_TYPES.EVENING_REMINDER]: '#607D8B',
+    [NOTIFICATION_TYPES.WEEKLY_SUMMARY]: '#795548',
+    [NOTIFICATION_TYPES.ASSIGNMENT_UPDATE]: '#00BCD4',
+    [NOTIFICATION_TYPES.TEST]: '#9E9E9E',
+  };
+  return colorMap[type] || '#9E9E9E';
+};
 
-  /**
-   * Handle pull to refresh
-   */
-  const onRefresh = useCallback(() => {
-    setRefreshing(true);
-    fetchNotifications().finally(() => {
-      setRefreshing(false);
-    });
-  }, [fetchNotifications]);
+export function NotificationsScreen(): React.JSX.Element {
+  const navigation = useNavigation<NavigationProp>();
+  const {
+    notifications,
+    stats,
+    loading,
+    refreshing,
+    loadNotifications,
+    loadStats,
+    markAsRead,
+    markMultipleAsRead,
+    sendTestNotification,
+    deleteNotification,
+    refreshNotifications,
+    getUnreadCount,
+    getNotificationsByType,
+  } = useNotifications();
 
-  /**
-   * Effect to fetch notifications on component mount
-   */
+  // Local state
+  const [searchQuery, setSearchQuery] = useState('');
+  const [selectedType, setSelectedType] = useState<string | null>(null);
+  const [showTypeMenu, setShowTypeMenu] = useState(false);
+  const [showTestDialog, setShowTestDialog] = useState(false);
+  const [testTitle, setTestTitle] = useState('');
+  const [testBody, setTestBody] = useState('');
+  const [snackbar, setSnackbar] = useState({ visible: false, message: '', type: 'info' as 'info' | 'success' | 'error' });
+
+  // Load data on mount
   useEffect(() => {
-    fetchNotifications();
-  }, [fetchNotifications]);
+    loadNotifications(1, selectedType);
+    loadStats();
+  }, [selectedType]);
 
-  /**
-   * Mark notification as read
-   */
-  const markAsRead = (notificationId: string) => {
-    setNotificationsState(prev => ({
-      ...prev,
-      data: prev.data.map(notification =>
-        notification.id === notificationId
-          ? { ...notification, isRead: true }
-          : notification
-      ),
-    }));
-  };
+  // Filter notifications based on search query
+  const filteredNotifications = notifications.filter(notification => {
+    const matchesSearch = searchQuery === '' || 
+      notification.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      notification.body.toLowerCase().includes(searchQuery.toLowerCase());
+    
+    return matchesSearch;
+  });
 
-  /**
-   * Mark all notifications as read
-   */
-  const markAllAsRead = () => {
-    setNotificationsState(prev => ({
-      ...prev,
-      data: prev.data.map(notification => ({ ...notification, isRead: true })),
-    }));
-  };
+  // Handle notification press
+  const handleNotificationPress = useCallback(async (notification: Notification) => {
+    if (!notification.delivered) {
+      await markAsRead(notification.id);
+    }
+    
+    // Navigate based on notification type
+    if (notification.data?.enquiryId) {
+      navigation.navigate('EnquiryDetails', { enquiryId: notification.data.enquiryId });
+    } else if (notification.data?.bookingId) {
+      navigation.navigate('BookingDetails', { bookingId: notification.data.bookingId });
+    }
+  }, [markAsRead, navigation]);
 
-  /**
-   * Handle notification action
-   */
-  const handleNotificationAction = (notification: Notification) => {
-    if (!notification.isRead) {
-      markAsRead(notification.id);
+  // Handle test notification
+  const handleSendTest = useCallback(async () => {
+    if (!testTitle.trim() || !testBody.trim()) {
+      setSnackbar({ visible: true, message: 'Please enter both title and body', type: 'error' });
+      return;
     }
 
-    Alert.alert(
-      'Notification Action',
-      `This would handle the action for: ${notification.title}. In a full implementation, this would navigate to the relevant screen or perform the required action.`,
-      [{ text: 'OK' }]
-    );
-  };
-
-  /**
-   * Delete notification
-   */
-  const deleteNotification = (notificationId: string) => {
-    setNotificationsState(prev => ({
-      ...prev,
-      data: prev.data.filter(n => n.id !== notificationId),
-    }));
-  };
-
-  /**
-   * Format timestamp
-   */
-  const formatTimestamp = (timestamp: string) => {
-    const date = new Date(timestamp);
-    const now = new Date();
-    const diffInHours = Math.floor((now.getTime() - date.getTime()) / (1000 * 60 * 60));
-
-    if (diffInHours < 1) {
-      return 'Just now';
-    } else if (diffInHours < 24) {
-      return `${diffInHours}h ago`;
-    } else {
-      const diffInDays = Math.floor(diffInHours / 24);
-      return `${diffInDays}d ago`;
+    const success = await sendTestNotification(testTitle, markAsRead);
+    if (success) {
+      setTestTitle('');
+      setTestBody('');
+      setShowTestDialog(false);
+      setSnackbar({ visible: true, message: 'Test notification sent!', type: 'success' });
     }
-  };
+  }, [testTitle, testBody, sendTestNotification]);
 
-  // Separate unread and read notifications
-  const unreadNotifications = notificationsState.data.filter(n => !n.isRead);
-  const readNotifications = notificationsState.data.filter(n => n.isRead);
+  // Mark all as read
+  const handleMarkAllAsRead = useCallback(async () => {
+    const unreadIds = notifications.filter(n => !n.delivered).map(n => n.id);
+    if (unreadIds.length > 0) {
+      await markMultipleAsRead(unreadIds);
+      setSnackbar({ visible: true, message: 'All notifications marked as read', type: 'success' });
+    }
+  }, [notifications, markMultipleAsRead]);
 
-  // Show loading state
-  if (notificationsState.loading && !refreshing) {
-    return (
-      <SafeAreaView style={styles.container}>
-        <View style={styles.headerSection}>
-          <TouchableOpacity onPress={() => navigation?.goBack?.()} style={styles.backButton}>
-            <Icon source="arrow-left" size={24} color={theme.colors.onSurface} />
-          </TouchableOpacity>
-          <Text variant="headlineLarge" style={styles.headerTitle}>
-            Notifications
-          </Text>
-          <View style={styles.placeholder} />
+  // Render notification item
+  const renderNotificationItem = ({ item }: { item: Notification }) => (
+    <TouchableOpacity
+      style={[
+        styles.notificationItem,
+        !item.delivered && styles.unreadNotification
+      ]}
+      onPress={() => handleNotificationPress(item)}
+    >
+      <View style={styles.notificationHeader}>
+        <Text style={styles.notificationTitle}>{item.title}</Text>
+        <View style={styles.notificationActions}>
+          {!item.delivered && (
+            <IconButton
+              icon="check"
+              size={16}
+              onPress={() => markAsRead(item.id)}
+            />
+          )}
+          <IconButton
+            icon="delete"
+            size={16}
+            onPress={() => deleteNotification(item.id)}
+          />
         </View>
-        <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color={theme.colors.primary} />
-          <Text style={styles.loadingText}>Loading notifications...</Text>
-        </View>
-      </SafeAreaView>
-    );
-  }
+      </View>
+      
+      <Text style={styles.notificationBody}>{item.body}</Text>
+      
+      <View style={styles.notificationFooter}>
+        <Chip
+          mode="outlined"
+          compact
+          style={[styles.typeChip, { borderColor: getTypeColor(item.type) }]}
+          textStyle={{ color: getTypeColor(item.type) }}
+        >
+          {getTypeDisplayName(item.type)}
+        </Chip>
+        
+        <Text style={styles.notificationDate}>
+          {new Date(item.sentAt).toLocaleString()}
+        </Text>
+      </View>
+    </TouchableOpacity>
+  );
 
-  // Show error state
-  if (notificationsState.error) {
-    return (
-      <SafeAreaView style={styles.container}>
-        <View style={styles.headerSection}>
-          <TouchableOpacity onPress={() => navigation?.goBack?.()} style={styles.backButton}>
-            <Icon source="arrow-left" size={24} color={theme.colors.onSurface} />
-          </TouchableOpacity>
-          <Text variant="headlineLarge" style={styles.headerTitle}>
-            Notifications
-          </Text>
-          <View style={styles.placeholder} />
+  // Render stats card
+  const renderStatsCard = () => (
+    <Card style={styles.statsCard}>
+      <LinearGradient
+        colors={['#667eea', '#764ba2']}
+        style={styles.statsGradient}
+      >
+        <View style={styles.statsContent}>
+          <Text style={styles.statsTitle}>Notification Statistics</Text>
+          <View style={styles.statsRow}>
+            <View style={styles.statItem}>
+              <Text style={styles.statNumber}>{stats?.totalNotifications || 0}</Text>
+              <Text style={styles.statLabel}>Total</Text>
+            </View>
+            <View style={styles.statItem}>
+              <Text style={styles.statNumber}>{stats?.unreadCount || 0}</Text>
+              <Text style={styles.statLabel}>Unread</Text>
+            </View>
+            <View style={styles.statItem}>
+              <Text style={styles.statNumber}>{stats?.recentNotifications || 0}</Text>
+              <Text style={styles.statLabel}>Recent</Text>
+            </View>
+          </View>
         </View>
-        <View style={styles.errorContainer}>
-          <Icon source="alert-circle" size={48} color={theme.colors.error} />
-          <Text style={styles.errorTitle}>Failed to load notifications</Text>
-          <Text style={styles.errorMessage}>{notificationsState.error}</Text>
-          <Button
-            mode="contained"
-            onPress={fetchNotifications}
-            style={styles.retryButton}
-          >
-            Try Again
-          </Button>
-        </View>
-      </SafeAreaView>
-    );
-  }
+      </LinearGradient>
+    </Card>
+  );
+
+  // Render empty state
+  const renderEmptyState = () => (
+    <View style={styles.emptyState}>
+      <Text style={styles.emptyTitle}>No Notifications</Text>
+      <Text style={styles.emptySubtitle}>
+        {selectedType 
+          ? `No ${getTypeDisplayName(selectedType).toLowerCase()} notifications found`
+          : 'You don\'t have any notifications yet'
+        }
+      </Text>
+    </View>
+  );
 
   return (
     <SafeAreaView style={styles.container}>
       {/* Header */}
-      <View style={styles.headerSection}>
-        <TouchableOpacity onPress={() => navigation?.goBack?.()} style={styles.backButton}>
-          <Icon source="arrow-left" size={24} color={theme.colors.onSurface} />
-        </TouchableOpacity>
-        <Text variant="headlineLarge" style={styles.headerTitle}>
-          Notifications
-        </Text>
-        <View style={styles.placeholder} />
+      <View style={styles.header}>
+        <Text style={styles.headerTitle}>Notifications</Text>
+        <View style={styles.headerActions}>
+          <Menu
+            visible={showTypeMenu}
+            onDismiss={() => setShowTypeMenu(false)}
+            anchor={
+              <Button
+                mode="outlined"
+                onPress={() => setShowTypeMenu(true)}
+                icon="filter"
+              >
+                {selectedType ? getTypeDisplayName(selectedType) : 'All Types'}
+              </Button>
+            }
+          >
+            <Menu.Item
+              onPress={() => {
+                setSelectedType(null);
+                setShowTypeMenu(false);
+              }}
+              title="All Types"
+            />
+            {Object.values(NOTIFICATION_TYPES).map(type => (
+              <Menu.Item
+                key={type}
+                onPress={() => {
+                  setSelectedType(type);
+                  setShowTypeMenu(false);
+                }}
+                title={getTypeDisplayName(type)}
+              />
+            ))}
+          </Menu>
+          
+          {getUnreadCount() > 0 && (
+            <Button
+              mode="contained"
+              onPress={handleMarkAllAsRead}
+              compact
+            >
+              Mark All Read
+            </Button>
+          )}
+        </View>
       </View>
 
-      <ScrollView
-        style={styles.scrollView}
-        contentContainerStyle={styles.scrollContent}
+      {/* Search */}
+      <Searchbar
+        placeholder="Search notifications..."
+        value={searchQuery}
+        onChangeText={setSearchQuery}
+        style={styles.searchbar}
+      />
+
+      {/* Stats Card */}
+      {stats && renderStatsCard()}
+
+      {/* Notifications List */}
+      <FlatList
+        data={filteredNotifications}
+        renderItem={renderNotificationItem}
+        keyExtractor={(item) => item.id}
         refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={refreshNotifications}
+          />
         }
+        ListEmptyComponent={renderEmptyState}
+        contentContainerStyle={styles.listContainer}
         showsVerticalScrollIndicator={false}
-      >
-        {/* Header with action button */}
-        {unreadNotifications.length > 0 && (
-          <View style={styles.header}>
-            <Text variant="titleMedium" style={styles.headerTitle}>
-              {unreadNotifications.length} unread notification{unreadNotifications.length !== 1 ? 's' : ''}
-            </Text>
-            <Button
-              mode="text"
-              compact
-              onPress={markAllAsRead}
-              style={styles.markAllButton}
-            >
-              Mark all read
-            </Button>
-          </View>
-        )}
+      />
 
-        {/* Unread Notifications */}
-        {unreadNotifications.length > 0 && (
-          <View style={styles.section}>
-            <Text variant="titleLarge" style={styles.sectionTitle}>
-              New
-            </Text>
-            {unreadNotifications.map((notification) => (
-              <Card
-                key={notification.id}
-                style={[styles.notificationCard, styles.unreadCard]}
-                onPress={() => handleNotificationAction(notification)}
+      {/* FAB for test notification */}
+      <FAB
+        icon="test-tube"
+        style={styles.fab}
+        onPress={() => setShowTestDialog(true)}
+        label="Test"
+      />
+
+      {/* Test Notification Dialog */}
+      {showTestDialog && (
+        <View style={styles.testDialog}>
+          <Card style={styles.testCard}>
+            <Text style={styles.testTitle}>Send Test Notification</Text>
+            
+            <Searchbar
+              placeholder="Notification Title"
+              value={testTitle}
+              onChangeText={setTestTitle}
+              style={styles.testInput}
+            />
+            
+            <Searchbar
+              placeholder="Notification Body"
+              value={testBody}
+              onChangeText={setTestBody}
+              style={styles.testInput}
+            />
+            
+            <View style={styles.testActions}>
+              <Button
+                mode="outlined"
+                onPress={() => setShowTestDialog(false)}
               >
-                <Card.Content style={styles.cardContent}>
-                  <View style={styles.notificationHeader}>
-                    <View style={styles.iconContainer}>
-                      <Icon
-                        source={getNotificationIcon(notification.type)}
-                        size={24}
-                        color={getTypeColor(notification.type)}
-                      />
-                    </View>
-                    <View style={styles.notificationInfo}>
-                      <Text variant="titleMedium" style={styles.notificationTitle}>
-                        {notification.title}
-                      </Text>
-                      <Text variant="bodyMedium" style={styles.notificationMessage}>
-                        {notification.message}
-                      </Text>
-                      <View style={styles.notificationMeta}>
-                        <Text variant="bodySmall" style={styles.timestamp}>
-                          {formatTimestamp(notification.timestamp)}
-                        </Text>
-                        <View style={styles.chips}>
-                          <Chip
-                            mode="flat"
-                            textStyle={{ fontSize: 10 }}
-                            style={[
-                              styles.chip,
-                              { backgroundColor: `${getPriorityColor(notification.priority)}20` }
-                            ]}
-                          >
-                            {notification.priority.toUpperCase()}
-                          </Chip>
-                          {notification.actionRequired && (
-                            <Chip
-                              mode="flat"
-                              textStyle={{ fontSize: 10 }}
-                              style={[styles.chip, styles.actionChip]}
-                            >
-                              ACTION REQUIRED
-                            </Chip>
-                          )}
-                        </View>
-                      </View>
-                    </View>
-                    <Button
-                      mode="text"
-                      compact
-                      icon="close"
-                      onPress={() => deleteNotification(notification.id)}
-                      style={styles.deleteButton}
-                    />
-                  </View>
-                </Card.Content>
-              </Card>
-            ))}
-          </View>
-        )}
-
-        {/* Read Notifications */}
-        {readNotifications.length > 0 && (
-          <View style={styles.section}>
-            <Text variant="titleLarge" style={styles.sectionTitle}>
-              Earlier
-            </Text>
-            {readNotifications.map((notification) => (
-              <Card
-                key={notification.id}
-                style={styles.notificationCard}
-                onPress={() => handleNotificationAction(notification)}
+                Cancel
+              </Button>
+              <Button
+                mode="contained"
+                onPress={handleSendTest}
+                disabled={!testTitle.trim() || !testBody.trim()}
               >
-                <Card.Content style={styles.cardContent}>
-                  <View style={styles.notificationHeader}>
-                    <View style={styles.iconContainer}>
-                      <Icon
-                        source={getNotificationIcon(notification.type)}
-                        size={20}
-                        color={theme.colors.onSurfaceVariant}
-                      />
-                    </View>
-                    <View style={styles.notificationInfo}>
-                      <Text variant="titleSmall" style={styles.readNotificationTitle}>
-                        {notification.title}
-                      </Text>
-                      <Text variant="bodySmall" style={styles.readNotificationMessage}>
-                        {notification.message}
-                      </Text>
-                      <Text variant="bodySmall" style={styles.readTimestamp}>
-                        {formatTimestamp(notification.timestamp)}
-                      </Text>
-                    </View>
-                    <Button
-                      mode="text"
-                      compact
-                      icon="close"
-                      onPress={() => deleteNotification(notification.id)}
-                      style={styles.deleteButton}
-                    />
-                  </View>
-                </Card.Content>
-              </Card>
-            ))}
-          </View>
-        )}
-
-        {/* Empty state */}
-        {notificationsState.data.length === 0 && (
-          <Card style={styles.emptyCard}>
-            <Card.Content style={styles.emptyContent}>
-              <Icon source="bell-off" size={48} color={theme.colors.onSurfaceVariant} />
-              <Text variant="titleMedium" style={styles.emptyTitle}>
-                No notifications
-              </Text>
-              <Text variant="bodyMedium" style={styles.emptySubtitle}>
-                You're all caught up! New notifications will appear here.
-              </Text>
-            </Card.Content>
+                Send
+              </Button>
+            </View>
           </Card>
-        )}
-      </ScrollView>
+        </View>
+      )}
+
+      {/* Snackbar */}
+      <Snackbar
+        visible={snackbar.visible}
+        onDismiss={() => setSnackbar({ ...snackbar, visible: false })}
+        duration={3000}
+      >
+        {snackbar.message}
+      </Snackbar>
     </SafeAreaView>
   );
 }
@@ -461,176 +389,157 @@ export function NotificationsScreen({ navigation }: any): React.JSX.Element {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F8F9FA',
-  },
-  headerSection: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.md,
-    backgroundColor: '#FFFFFF',
-    borderBottomWidth: 1,
-    borderBottomColor: '#E5E5E5',
-  },
-  backButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: '#F8F9FA',
-    justifyContent: 'center',
-    alignItems: 'center',
-    elevation: 1,
-  },
-  headerTitle: {
-    color: theme.colors.onSurface,
-    fontWeight: '700',
-  },
-  placeholder: {
-    width: 40,
-  },
-  scrollView: {
-    flex: 1,
-  },
-  scrollContent: {
-    padding: spacing.md,
-    paddingBottom: spacing.xl,
+    backgroundColor: '#f5f5f5',
   },
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: spacing.lg,
-    paddingHorizontal: spacing.sm,
+    padding: spacing.md,
+    backgroundColor: 'white',
+    ...shadows.sm,
   },
   headerTitle: {
-    color: theme.colors.onSurface,
-    fontWeight: '600',
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: theme.colors.primary,
   },
-  markAllButton: {
-    minWidth: 80,
+  headerActions: {
+    flexDirection: 'row',
+    gap: spacing.sm,
   },
-  section: {
-    marginBottom: spacing.lg,
+  searchbar: {
+    margin: spacing.md,
+    marginTop: 0,
   },
-  sectionTitle: {
-    color: theme.colors.onSurface,
-    fontWeight: '600',
+  statsCard: {
+    margin: spacing.md,
+    marginTop: 0,
+    ...shadows.sm,
+  },
+  statsGradient: {
+    borderRadius: borderRadius.md,
+  },
+  statsContent: {
+    padding: spacing.lg,
+  },
+  statsTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: 'white',
     marginBottom: spacing.md,
-    paddingHorizontal: spacing.sm,
   },
-  notificationCard: {
+  statsRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+  },
+  statItem: {
+    alignItems: 'center',
+  },
+  statNumber: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: 'white',
+  },
+  statLabel: {
+    fontSize: 12,
+    color: 'rgba(255, 255, 255, 0.8)',
+    marginTop: spacing.xs,
+  },
+  listContainer: {
+    padding: spacing.md,
+    paddingTop: 0,
+  },
+  notificationItem: {
+    backgroundColor: 'white',
     marginBottom: spacing.sm,
-    elevation: 1,
+    borderRadius: borderRadius.md,
+    padding: spacing.md,
+    ...shadows.sm,
   },
-  unreadCard: {
-    elevation: 2,
+  unreadNotification: {
     borderLeftWidth: 4,
     borderLeftColor: theme.colors.primary,
-  },
-  cardContent: {
-    paddingVertical: spacing.sm,
+    backgroundColor: '#f0f8ff',
   },
   notificationHeader: {
     flexDirection: 'row',
+    justifyContent: 'space-between',
     alignItems: 'flex-start',
-  },
-  iconContainer: {
-    marginRight: spacing.md,
-    marginTop: spacing.xs,
-  },
-  notificationInfo: {
-    flex: 1,
-  },
-  notificationTitle: {
-    color: theme.colors.onSurface,
-    fontWeight: '600',
-    marginBottom: spacing.xs,
-  },
-  readNotificationTitle: {
-    color: theme.colors.onSurfaceVariant,
-    fontWeight: '500',
-    marginBottom: spacing.xs,
-  },
-  notificationMessage: {
-    color: theme.colors.onSurface,
     marginBottom: spacing.sm,
   },
-  readNotificationMessage: {
-    color: theme.colors.onSurfaceVariant,
-    marginBottom: spacing.xs,
+  notificationTitle: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    flex: 1,
+    marginRight: spacing.sm,
   },
-  notificationMeta: {
+  notificationActions: {
+    flexDirection: 'row',
+  },
+  notificationBody: {
+    fontSize: 14,
+    color: '#666',
+    marginBottom: spacing.sm,
+    lineHeight: 20,
+  },
+  notificationFooter: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
   },
-  timestamp: {
-    color: theme.colors.onSurfaceVariant,
+  typeChip: {
+    height: 24,
   },
-  readTimestamp: {
-    color: theme.colors.onSurfaceVariant,
+  notificationDate: {
+    fontSize: 12,
+    color: '#999',
   },
-  chips: {
-    flexDirection: 'row',
-    gap: spacing.xs,
-  },
-  chip: {
-    height: 20,
-  },
-  actionChip: {
-    backgroundColor: `${theme.colors.tertiary}20`,
-  },
-  deleteButton: {
-    marginLeft: spacing.sm,
-  },
-  emptyCard: {
-    marginTop: spacing.xl,
-  },
-  emptyContent: {
+  emptyState: {
     alignItems: 'center',
-    paddingVertical: spacing.xl,
+    paddingVertical: spacing.xxl,
   },
   emptyTitle: {
-    color: theme.colors.onSurface,
-    marginVertical: spacing.md,
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#666',
+    marginBottom: spacing.sm,
   },
   emptySubtitle: {
-    color: theme.colors.onSurfaceVariant,
-    textAlign: 'center',
-  },
-  loadingContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingHorizontal: spacing.xl,
-  },
-  loadingText: {
-    marginTop: spacing.md,
-    color: theme.colors.onSurfaceVariant,
-    fontSize: 16,
-  },
-  errorContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingHorizontal: spacing.xl,
-  },
-  errorTitle: {
-    marginTop: spacing.md,
-    color: theme.colors.onSurface,
-    fontSize: 18,
-    fontWeight: '600',
-    textAlign: 'center',
-  },
-  errorMessage: {
-    marginTop: spacing.sm,
-    color: theme.colors.onSurfaceVariant,
     fontSize: 14,
+    color: '#999',
     textAlign: 'center',
-    lineHeight: 20,
   },
-  retryButton: {
-    marginTop: spacing.lg,
+  fab: {
+    position: 'absolute',
+    right: spacing.md,
+    bottom: spacing.md,
+  },
+  testDialog: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  testCard: {
+    width: width * 0.9,
+    padding: spacing.lg,
+  },
+  testTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    marginBottom: spacing.md,
+  },
+  testInput: {
+    marginBottom: spacing.md,
+  },
+  testActions: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    gap: spacing.sm,
   },
 });
