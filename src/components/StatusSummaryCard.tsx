@@ -16,6 +16,8 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { bookingAPI } from '../api/bookings';
 import { enquiryAPI } from '../api/enquiries';
+import { useAuth } from '../context/AuthContext';
+import { getUserRole } from '../utils/roleUtils';
 
 interface StatusSummaryCardProps {
   type: 'bookings' | 'enquiries';
@@ -47,6 +49,8 @@ export const StatusSummaryCard: React.FC<StatusSummaryCardProps> = ({
   onRefresh,
   style,
 }) => {
+  const { state } = useAuth();
+  const userRole = getUserRole(state.user);
   const [summary, setSummary] = useState<SummaryData | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -57,14 +61,87 @@ export const StatusSummaryCard: React.FC<StatusSummaryCardProps> = ({
       setLoading(true);
       setError(null);
       
-      const response = type === 'bookings' 
-        ? await bookingAPI.getBookingStatusSummary()
-        : await enquiryAPI.getEnquiryStatusSummary();
+      let response;
+      
+      // Use role-appropriate endpoints
+      if (type === 'bookings') {
+        if (['ADMIN', 'GENERAL_MANAGER', 'SALES_MANAGER', 'TEAM_LEAD'].includes(userRole)) {
+          // Higher roles can access status summary
+          response = await bookingAPI.getBookingStatusSummary();
+        } else {
+          // Customer advisors use their own bookings endpoint
+          response = await bookingAPI.getMyBookings(1, 1000);
+          // Transform the response to match expected format
+          const bookings = response.data?.bookings || [];
+          const transformedData = {
+            totalBookings: bookings.length,
+            recentBookings: bookings.filter((b: any) => {
+              const bookingDate = new Date(b.bookingDate);
+              const weekAgo = new Date();
+              weekAgo.setDate(weekAgo.getDate() - 7);
+              return bookingDate >= weekAgo;
+            }).length,
+            pendingBookings: bookings.filter((b: any) => 
+              ['PENDING', 'ASSIGNED', 'IN_PROGRESS', 'CONFIRMED', 'APPROVED'].includes(b.status)
+            ).length,
+            statusBreakdown: Object.entries(
+              bookings.reduce((acc: any, booking: any) => {
+                acc[booking.status] = (acc[booking.status] || 0) + 1;
+                return acc;
+              }, {})
+            ).map(([status, count]) => ({ status, count: count as number })),
+            overdueDeliveries: bookings.filter((b: any) => {
+              if (!b.expectedDeliveryDate) return false;
+              const deliveryDate = new Date(b.expectedDeliveryDate);
+              const today = new Date();
+              return deliveryDate < today && !['DELIVERED', 'CANCELLED'].includes(b.status);
+            }).length,
+          };
+          response = { data: transformedData };
+        }
+      } else {
+        if (['ADMIN', 'GENERAL_MANAGER', 'SALES_MANAGER', 'TEAM_LEAD'].includes(userRole)) {
+          // Higher roles can access status summary
+          response = await enquiryAPI.getEnquiryStatusSummary();
+        } else {
+          // Customer advisors use their own enquiries endpoint
+          response = await enquiryAPI.getMyEnquiries(1, 1000);
+          // Transform the response to match expected format
+          const enquiries = response.data?.enquiries || [];
+          const transformedData = {
+            totalEnquiries: enquiries.length,
+            recentEnquiries: enquiries.filter((e: any) => {
+              const enquiryDate = new Date(e.createdAt);
+              const weekAgo = new Date();
+              weekAgo.setDate(weekAgo.getDate() - 7);
+              return enquiryDate >= weekAgo;
+            }).length,
+            hotEnquiries: enquiries.filter((e: any) => e.category === 'HOT').length,
+            categoryBreakdown: Object.entries(
+              enquiries.reduce((acc: any, enquiry: any) => {
+                acc[enquiry.category] = (acc[enquiry.category] || 0) + 1;
+                return acc;
+              }, {})
+            ).map(([category, count]) => ({ category, count: count as number })),
+            overdueFollowUps: enquiries.filter((e: any) => {
+              if (!e.followUpDate) return false;
+              const followUpDate = new Date(e.followUpDate);
+              const today = new Date();
+              return followUpDate < today && !['CONVERTED', 'LOST'].includes(e.status);
+            }).length,
+          };
+          response = { data: transformedData };
+        }
+      }
         
       setSummary(response.data);
-    } catch (error) {
+    } catch (error: any) {
       console.error('Failed to fetch summary:', error);
-      setError('Failed to load summary');
+      if (error.response?.status === 403) {
+        setError('Insufficient permissions to view analytics');
+      } else {
+        setError('Failed to load summary');
+      }
     } finally {
       setLoading(false);
     }

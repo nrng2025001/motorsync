@@ -136,6 +136,11 @@ const AnalyticsScreen: React.FC = () => {
               <Text variant="bodySmall" style={styles.roleIndicator}>
                 {getRoleDisplayNameWithHierarchy(userRole)} • {dataFilterOptions.canSeeAll ? 'All Data' : dataFilterOptions.canSeeTeam ? 'Team Data' : 'Own Data'}
               </Text>
+              {!dataFilterOptions.canSeeAll && (
+                <Text variant="bodySmall" style={styles.permissionNote}>
+                  📊 Analytics limited to your own data based on role permissions
+                </Text>
+              )}
             </View>
             <View style={styles.headerIcon}>
               <Text style={styles.headerIconText}>📈</Text>
@@ -297,6 +302,12 @@ const styles = StyleSheet.create({
     paddingVertical: 4,
     borderRadius: 6,
     alignSelf: 'flex-start',
+  },
+  permissionNote: {
+    color: '#FF9500',
+    marginTop: 4,
+    fontSize: 11,
+    fontStyle: 'italic',
   },
   headerIcon: {
     width: 60,
