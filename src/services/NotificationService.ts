@@ -88,12 +88,12 @@ class NotificationService {
   /**
    * Update FCM token on backend
    */
-  async updateFCMToken(token: string): Promise<boolean> {
+  async updateFCMToken(token: string): Promise<{ success: boolean; error?: string }> {
     try {
       const firebaseToken = await AsyncStorage.getItem('firebaseToken');
       if (!firebaseToken) {
         console.log('❌ No Firebase token available');
-        return false;
+        return { success: false, error: 'No Firebase token available' };
       }
 
       const response = await fetch(`${API_URL}/notifications/fcm-token`, {
@@ -109,16 +109,30 @@ class NotificationService {
         })
       });
 
+      const data = await response.json();
+
       if (response.ok) {
         console.log('✅ FCM token updated successfully');
-        return true;
+        return { success: true };
       } else {
-        console.log('❌ Failed to update FCM token:', response.status);
-        return false;
+        console.log(`❌ Failed to update FCM token: ${response.status} - ${data.message}`);
+        
+        // Handle specific error cases
+        if (response.status === 401) {
+          return { success: false, error: 'Authentication failed. Please log in again.' };
+        } else if (response.status === 404) {
+          return { success: false, error: 'User not found. Please contact support.' };
+        } else if (response.status === 400) {
+          return { success: false, error: data.message || 'Invalid request data.' };
+        } else if (response.status === 500) {
+          return { success: false, error: 'Server error. Please try again later.' };
+        } else {
+          return { success: false, error: data.message || 'Failed to update FCM token.' };
+        }
       }
     } catch (error) {
       console.error('Error updating FCM token:', error);
-      return false;
+      return { success: false, error: 'Network error. Please check your connection.' };
     }
   }
 
@@ -158,33 +172,37 @@ class NotificationService {
   /**
    * Initialize notification system
    */
-  async initializeNotifications(): Promise<boolean> {
+  async initializeNotifications(): Promise<{ success: boolean; error?: string }> {
     try {
       console.log('🚀 Initializing notification system...');
       
       const hasPermission = await this.requestPermission();
       if (!hasPermission) {
         console.log('❌ Notification permission denied');
-        return false;
+        return { success: false, error: 'Notification permission denied' };
       }
 
       const token = await this.getFCMToken();
       if (!token) {
         console.log('❌ Failed to get FCM token');
-        return false;
+        return { success: false, error: 'Failed to get FCM token' };
       }
 
       // Update token on backend
-      await this.updateFCMToken(token);
+      const updateResult = await this.updateFCMToken(token);
+      if (!updateResult.success) {
+        console.log('❌ Failed to update FCM token on backend:', updateResult.error);
+        return { success: false, error: updateResult.error };
+      }
 
       // Set up message listeners
       this.setupMessageListeners();
 
       console.log('✅ Notification system initialized successfully');
-      return true;
+      return { success: true };
     } catch (error) {
       console.error('Error initializing notifications:', error);
-      return false;
+      return { success: false, error: 'Failed to initialize notifications' };
     }
   }
 

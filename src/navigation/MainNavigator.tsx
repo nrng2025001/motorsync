@@ -33,6 +33,8 @@ import { theme } from '../utils/theme';
 export type MainTabParamList = {
   Dashboard: undefined;
   Enquiries: undefined;
+  Bookings: undefined;
+  Stock: undefined;
   AIAssistant: undefined;
   QuotationGenerator: undefined;
   Notifications: undefined;

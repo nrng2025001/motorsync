@@ -236,14 +236,34 @@ export const NotificationProvider: React.FC<NotificationProviderProps> = ({ chil
   // Initialize notifications on app start
   useEffect(() => {
     console.log('🚀 Initializing notification system...');
-    NotificationService.initializeNotifications().then(success => {
-      if (success) {
+    NotificationService.initializeNotifications().then(result => {
+      if (result.success) {
         console.log('✅ Notification system initialized');
         // Load initial data
         loadNotifications(1);
         loadStats();
       } else {
-        console.log('❌ Failed to initialize notification system');
+        console.log('❌ Failed to initialize notification system:', result.error);
+        // Show user-friendly error message
+        if (result.error?.includes('Authentication failed')) {
+          Alert.alert(
+            'Authentication Required',
+            'Please log in again to enable notifications.',
+            [{ text: 'OK' }]
+          );
+        } else if (result.error?.includes('permission denied')) {
+          Alert.alert(
+            'Notification Permission',
+            'Please enable notifications in your device settings to receive updates.',
+            [{ text: 'OK' }]
+          );
+        } else {
+          Alert.alert(
+            'Notification Setup',
+            'Unable to set up notifications. You can try again later.',
+            [{ text: 'OK' }]
+          );
+        }
       }
     });
   }, [loadNotifications, loadStats]);
