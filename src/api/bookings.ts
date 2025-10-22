@@ -289,6 +289,27 @@ class BookingAPI {
   }>> {
     return apiClient.post('/bookings/bulk-update-remarks', { bookingIds, remarks });
   }
+
+  // Download bookings with filters
+  async downloadBookings(filters: any = {}): Promise<Blob> {
+    const queryParams = new URLSearchParams();
+    
+    if (filters.format) queryParams.append('format', filters.format);
+    if (filters.startDate) queryParams.append('startDate', filters.startDate);
+    if (filters.endDate) queryParams.append('endDate', filters.endDate);
+    if (filters.status) queryParams.append('status', filters.status);
+    if (filters.search) queryParams.append('search', filters.search);
+
+    const response = await apiClient.get(`/bookings/download?${queryParams.toString()}`, {
+      responseType: 'blob',
+    });
+    return response.data;
+  }
+
+  // Get booking status summary
+  async getBookingStatusSummary(): Promise<ApiResponse<any>> {
+    return apiClient.get('/bookings/status-summary');
+  }
 }
 
 export const bookingAPI = new BookingAPI();

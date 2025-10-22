@@ -4,6 +4,7 @@ import { AuthAPI } from '../api/auth';
 import { AuthService } from '../services/authService';
 import { User as FirebaseUser } from 'firebase/auth';
 import { Dealership } from '../types/dealership';
+import { auth } from '../config/firebase';
 
 /**
  * User roles in the automotive CRM system
@@ -235,6 +236,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             console.log('   Firebase UID:', firebaseUser.uid);
             console.log('   Email:', firebaseUser.email);
             
+            // Get fresh token to ensure it's valid
+            const token = await firebaseUser.getIdToken(true);
+            console.log('🔑 Fresh token obtained, length:', token.length);
+            
             // Get user profile from backend
             const userProfile = await AuthAPI.getProfile();
             
@@ -253,7 +258,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             // Store user data in AsyncStorage for persistence
             try {
               await AsyncStorage.setItem('userProfile', JSON.stringify(transformedProfile));
-              console.log('✅ User profile stored in AsyncStorage');
+              await AsyncStorage.setItem('@auth_token', token);
+              console.log('✅ User profile and token stored in AsyncStorage');
             } catch (storageError) {
               console.warn('⚠️ Failed to store user profile in AsyncStorage:', storageError);
             }
@@ -264,6 +270,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             console.error('   This means the user is not properly set up in the backend database');
             console.error('   User must be created in the backend first');
             
+            // Clear any stale data
+            await AsyncStorage.removeItem('@auth_token');
+            await AsyncStorage.removeItem('@auth_user');
+            await AsyncStorage.removeItem('userProfile');
+            
             // Don't create fallback user - this should fail
             dispatch({ 
               type: 'LOGIN_FAILURE', 
@@ -272,6 +283,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           }
         } else {
           console.log('🔄 No Firebase user, clearing auth state');
+          
+          // Clear all auth data when user signs out
+          await AsyncStorage.removeItem('@auth_token');
+          await AsyncStorage.removeItem('@auth_user');
+          await AsyncStorage.removeItem('userProfile');
+          
           dispatch({ type: 'LOADING', payload: false });
         }
       });
@@ -402,6 +419,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     try {
       console.log('🔄 Refreshing profile from backend...');
       
+      // Get fresh Firebase token first
+      const firebaseUser = auth.currentUser;
+      if (!firebaseUser) {
+        throw new Error('No Firebase user found');
+      }
+      
+      const token = await firebaseUser.getIdToken(true);
+      console.log('🔑 Fresh token obtained for profile refresh, length:', token.length);
+      
       const userProfile = await AuthAPI.getProfile();
       
       console.log('✅ Profile refreshed successfully');
@@ -415,11 +441,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       
       dispatch({ type: 'LOGIN_SUCCESS', payload: transformedProfile });
       
-      // Update cache
-      await AsyncStorage.setItem('user', JSON.stringify(transformedProfile));
+      // Update cache with fresh data
+      await AsyncStorage.setItem('userProfile', JSON.stringify(transformedProfile));
+      await AsyncStorage.setItem('@auth_token', token);
       
     } catch (error) {
       console.error('❌ Failed to refresh profile:', error);
+      
+      // Clear stale data on refresh failure
+      await AsyncStorage.removeItem('@auth_token');
+      await AsyncStorage.removeItem('@auth_user');
+      await AsyncStorage.removeItem('userProfile');
+      
       dispatch({ 
         type: 'LOGIN_FAILURE', 
         payload: 'Failed to refresh profile. Please try logging in again.' 

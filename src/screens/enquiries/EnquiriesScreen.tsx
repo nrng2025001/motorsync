@@ -34,6 +34,7 @@ import { LinearGradient as ExpoLinearGradient } from 'expo-linear-gradient';
 import Svg, { Path, Rect, Defs, LinearGradient, Stop, G, Ellipse, Circle } from 'react-native-svg';
 
 import { EnquiryCard } from '../../components/EnquiryCard';
+import { DownloadButton } from '../../components/DownloadButton';
 import * as EnquiryService from '../../services/enquiry.service';
 import { enquiryAPI } from '../../api/enquiries';
 import { Enquiry, EnquiryCategory, EnquiryStatus, EnquirySource, AutoBookingResponse } from '../../services/types';
@@ -668,6 +669,16 @@ export function EnquiriesScreen(): React.JSX.Element {
             </View>
           </View>
           
+          {/* Download Button */}
+          <View style={styles.downloadContainer}>
+            <DownloadButton 
+              type="enquiries" 
+              onDownloadStart={() => console.log('Download started')}
+              onDownloadComplete={(result) => console.log('Download completed', result)}
+              style={styles.downloadButton}
+            />
+          </View>
+          
           {/* Stats Bar */}
           {renderStatsBar()}
         </View>
@@ -1136,5 +1147,21 @@ const styles = StyleSheet.create({
   clearFiltersButton: {
     marginLeft: 8,
     borderRadius: 20,
+  },
+  downloadContainer: {
+    marginTop: 16,
+    marginBottom: 8,
+    alignItems: 'flex-end',
+  },
+  downloadButton: {
+    backgroundColor: '#8B5CF6',
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    borderRadius: 8,
+    shadowColor: '#8B5CF6',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 3,
   },
 });

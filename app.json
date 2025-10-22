@@ -20,7 +20,8 @@
       "buildNumber": "1",
       "infoPlist": {
         "NSCameraUsageDescription": "This app uses camera to capture vehicle photos for enquiries.",
-        "NSPhotoLibraryUsageDescription": "This app accesses photo library to attach vehicle photos to enquiries."
+        "NSPhotoLibraryUsageDescription": "This app accesses photo library to attach vehicle photos to enquiries.",
+        "NSUserNotificationsUsageDescription": "This app sends notifications for enquiry updates and booking reminders."
       }
     },
     "android": {
@@ -33,7 +34,10 @@
       "permissions": [
         "android.permission.CAMERA",
         "android.permission.READ_EXTERNAL_STORAGE",
-        "android.permission.WRITE_EXTERNAL_STORAGE"
+        "android.permission.WRITE_EXTERNAL_STORAGE",
+        "android.permission.RECEIVE_BOOT_COMPLETED",
+        "android.permission.VIBRATE",
+        "android.permission.WAKE_LOCK"
       ]
     },
     "web": {
@@ -41,7 +45,15 @@
       "bundler": "metro"
     },
     "plugins": [
-      "expo-font"
+      "expo-font",
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/notification-icon.png",
+          "color": "#1565C0",
+          "defaultChannel": "default"
+        }
+      ]
     ],
     "scheme": "motorsync",
     "newArchEnabled": true,

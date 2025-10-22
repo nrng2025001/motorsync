@@ -696,6 +696,74 @@ export function DashboardScreen({ navigation }: any): React.JSX.Element {
           </Text>
           
           <View style={styles.featureGrid}>
+            {/* Analytics Card */}
+            <TouchableOpacity
+              style={styles.featureCard}
+              onPress={() => navigation.navigate('Analytics')}
+              activeOpacity={0.7}
+            >
+              <View style={[styles.featureIcon, { backgroundColor: '#7C3AED20' }]}>
+                <Icon source="chart-line" size={28} color="#7C3AED" />
+              </View>
+              <Text variant="titleMedium" style={styles.featureTitle}>
+                Analytics
+              </Text>
+              <Text variant="bodySmall" style={styles.featureSubtitle}>
+                Performance insights & metrics
+              </Text>
+            </TouchableOpacity>
+
+            {/* Bookings Card */}
+            <TouchableOpacity
+              style={styles.featureCard}
+              onPress={() => navigation.navigate('Bookings')}
+              activeOpacity={0.7}
+            >
+              <View style={[styles.featureIcon, { backgroundColor: '#05966920' }]}>
+                <Icon source="calendar-check" size={28} color="#059669" />
+              </View>
+              <Text variant="titleMedium" style={styles.featureTitle}>
+                Bookings
+              </Text>
+              <Text variant="bodySmall" style={styles.featureSubtitle}>
+                {dashboardData.bookings.total} total • {dashboardData.bookings.pending} pending
+              </Text>
+            </TouchableOpacity>
+
+            {/* Stock Card */}
+            <TouchableOpacity
+              style={styles.featureCard}
+              onPress={() => navigation.navigate('Stock')}
+              activeOpacity={0.7}
+            >
+              <View style={[styles.featureIcon, { backgroundColor: '#DC262620' }]}>
+                <Icon source="car" size={28} color="#DC2626" />
+              </View>
+              <Text variant="titleMedium" style={styles.featureTitle}>
+                Stock
+              </Text>
+              <Text variant="bodySmall" style={styles.featureSubtitle}>
+                Vehicle inventory management
+              </Text>
+            </TouchableOpacity>
+
+            {/* Notifications Card */}
+            <TouchableOpacity
+              style={styles.featureCard}
+              onPress={() => navigation.navigate('Notifications')}
+              activeOpacity={0.7}
+            >
+              <View style={[styles.featureIcon, { backgroundColor: '#EA580C20' }]}>
+                <Icon source="bell" size={28} color="#EA580C" />
+              </View>
+              <Text variant="titleMedium" style={styles.featureTitle}>
+                Notifications
+              </Text>
+              <Text variant="bodySmall" style={styles.featureSubtitle}>
+                Alerts & updates
+              </Text>
+            </TouchableOpacity>
+
             {/* Quotations Card - Only for authorized roles */}
             {['general_manager', 'sales_manager', 'team_lead'].includes(userRole) && (
               <TouchableOpacity

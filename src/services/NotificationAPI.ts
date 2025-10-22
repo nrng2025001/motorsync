@@ -5,6 +5,7 @@
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { API_URL } from './api.config';
+import { apiClient } from '../api/client';
 
 export interface Notification {
   id: string;
@@ -43,7 +44,8 @@ export interface NotificationStatsResponse {
 
 class NotificationAPI {
   /**
-   * Get authentication headers
+   * Get authentication headers (deprecated - now using apiClient)
+   * @deprecated Use apiClient instead which handles token refresh automatically
    */
   private async getHeaders(): Promise<Record<string, string>> {
     const token = await AsyncStorage.getItem('firebaseToken');
@@ -62,6 +64,8 @@ class NotificationAPI {
     type: string | null = null
   ): Promise<NotificationHistoryResponse> {
     try {
+      console.log('📱 Loading notifications...', { page, type });
+      
       const params = new URLSearchParams({
         page: page.toString(),
         limit: limit.toString()
@@ -71,23 +75,10 @@ class NotificationAPI {
         params.append('type', type);
       }
 
-      const response = await fetch(
-        `${API_URL}/notifications/history?${params}`,
-        { 
-          headers: await this.getHeaders(),
-          method: 'GET'
-        }
-      );
-      
-      const data = await response.json();
-      
-      if (!response.ok) {
-        throw new Error(data.message || `HTTP ${response.status}`);
-      }
-      
-      return data;
+      const response = await apiClient.get(`/notifications/history?${params}`);
+      return response.data;
     } catch (error) {
-      console.error('Error fetching notification history:', error);
+      console.error('Error loading notifications:', error);
       throw error;
     }
   }
@@ -97,21 +88,10 @@ class NotificationAPI {
    */
   async getNotificationStats(): Promise<NotificationStatsResponse> {
     try {
-      const response = await fetch(
-        `${API_URL}/notifications/stats`,
-        { 
-          headers: await this.getHeaders(),
-          method: 'GET'
-        }
-      );
+      console.log('📊 Loading notification stats...');
       
-      const data = await response.json();
-      
-      if (!response.ok) {
-        throw new Error(data.message || `HTTP ${response.status}`);
-      }
-      
-      return data;
+      const response = await apiClient.get('/notifications/stats');
+      return response.data;
     } catch (error) {
       console.error('Error fetching notification stats:', error);
       throw error;
@@ -123,21 +103,8 @@ class NotificationAPI {
    */
   async markAsRead(notificationId: string): Promise<{ success: boolean; message?: string }> {
     try {
-      const response = await fetch(
-        `${API_URL}/notifications/${notificationId}/read`,
-        {
-          method: 'PATCH',
-          headers: await this.getHeaders()
-        }
-      );
-      
-      const data = await response.json();
-      
-      if (!response.ok) {
-        throw new Error(data.message || `HTTP ${response.status}`);
-      }
-      
-      return data;
+      const response = await apiClient.patch(`/notifications/${notificationId}/read`);
+      return response.data;
     } catch (error) {
       console.error('Error marking notification as read:', error);
       throw error;
@@ -149,22 +116,8 @@ class NotificationAPI {
    */
   async markMultipleAsRead(notificationIds: string[]): Promise<{ success: boolean; message?: string }> {
     try {
-      const response = await fetch(
-        `${API_URL}/notifications/mark-read`,
-        {
-          method: 'PATCH',
-          headers: await this.getHeaders(),
-          body: JSON.stringify({ notificationIds })
-        }
-      );
-      
-      const data = await response.json();
-      
-      if (!response.ok) {
-        throw new Error(data.message || `HTTP ${response.status}`);
-      }
-      
-      return data;
+      const response = await apiClient.patch('/notifications/mark-read', { notificationIds });
+      return response.data;
     } catch (error) {
       console.error('Error marking notifications as read:', error);
       throw error;
@@ -176,22 +129,8 @@ class NotificationAPI {
    */
   async sendTestNotification(title: string, body: string): Promise<{ success: boolean; message?: string }> {
     try {
-      const response = await fetch(
-        `${API_URL}/notifications/test`,
-        {
-          method: 'POST',
-          headers: await this.getHeaders(),
-          body: JSON.stringify({ title, body })
-        }
-      );
-      
-      const data = await response.json();
-      
-      if (!response.ok) {
-        throw new Error(data.message || `HTTP ${response.status}`);
-      }
-      
-      return data;
+      const response = await apiClient.post('/notifications/test', { title, body });
+      return response.data;
     } catch (error) {
       console.error('Error sending test notification:', error);
       throw error;
@@ -203,21 +142,8 @@ class NotificationAPI {
    */
   async getFCMTokenStatus(): Promise<{ success: boolean; data?: { hasToken: boolean; lastUpdated?: string } }> {
     try {
-      const response = await fetch(
-        `${API_URL}/notifications/fcm-token`,
-        { 
-          headers: await this.getHeaders(),
-          method: 'GET'
-        }
-      );
-      
-      const data = await response.json();
-      
-      if (!response.ok) {
-        throw new Error(data.message || `HTTP ${response.status}`);
-      }
-      
-      return data;
+      const response = await apiClient.get('/notifications/fcm-token');
+      return response.data;
     } catch (error) {
       console.error('Error fetching FCM token status:', error);
       throw error;
@@ -237,22 +163,8 @@ class NotificationAPI {
     weeklySummary: boolean;
   }): Promise<{ success: boolean; message?: string }> {
     try {
-      const response = await fetch(
-        `${API_URL}/notifications/preferences`,
-        {
-          method: 'PUT',
-          headers: await this.getHeaders(),
-          body: JSON.stringify(preferences)
-        }
-      );
-      
-      const data = await response.json();
-      
-      if (!response.ok) {
-        throw new Error(data.message || `HTTP ${response.status}`);
-      }
-      
-      return data;
+      const response = await apiClient.put('/notifications/preferences', preferences);
+      return response.data;
     } catch (error) {
       console.error('Error updating notification preferences:', error);
       throw error;
@@ -264,21 +176,8 @@ class NotificationAPI {
    */
   async getNotificationPreferences(): Promise<{ success: boolean; data?: any }> {
     try {
-      const response = await fetch(
-        `${API_URL}/notifications/preferences`,
-        { 
-          headers: await this.getHeaders(),
-          method: 'GET'
-        }
-      );
-      
-      const data = await response.json();
-      
-      if (!response.ok) {
-        throw new Error(data.message || `HTTP ${response.status}`);
-      }
-      
-      return data;
+      const response = await apiClient.get('/notifications/preferences');
+      return response.data;
     } catch (error) {
       console.error('Error fetching notification preferences:', error);
       throw error;
@@ -290,21 +189,8 @@ class NotificationAPI {
    */
   async deleteNotification(notificationId: string): Promise<{ success: boolean; message?: string }> {
     try {
-      const response = await fetch(
-        `${API_URL}/notifications/${notificationId}`,
-        {
-          method: 'DELETE',
-          headers: await this.getHeaders()
-        }
-      );
-      
-      const data = await response.json();
-      
-      if (!response.ok) {
-        throw new Error(data.message || `HTTP ${response.status}`);
-      }
-      
-      return data;
+      const response = await apiClient.delete(`/notifications/${notificationId}`);
+      return response.data;
     } catch (error) {
       console.error('Error deleting notification:', error);
       throw error;

@@ -31,6 +31,12 @@
           <string>com.motorsync.app</string>
         </array>
       </dict>
+      <dict>
+        <key>CFBundleURLSchemes</key>
+        <array>
+          <string>exp+automotive-crm</string>
+        </array>
+      </dict>
     </array>
     <key>CFBundleVersion</key>
     <string>1</string>
@@ -49,6 +55,8 @@
     <string>This app uses camera to capture vehicle photos for enquiries.</string>
     <key>NSPhotoLibraryUsageDescription</key>
     <string>This app accesses photo library to attach vehicle photos to enquiries.</string>
+    <key>NSUserNotificationsUsageDescription</key>
+    <string>This app sends notifications for enquiry updates and booking reminders.</string>
     <key>RCTNewArchEnabled</key>
     <true/>
     <key>UILaunchStoryboardName</key>

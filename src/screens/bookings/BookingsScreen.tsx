@@ -27,6 +27,7 @@ import { LinearGradient as ExpoLinearGradient } from 'expo-linear-gradient';
 import Svg, { Path, Rect, Defs, LinearGradient, Stop, G, Ellipse, Circle } from 'react-native-svg';
 
 import { BookingCard } from '../../components/BookingCard';
+import { DownloadButton } from '../../components/DownloadButton';
 import * as BookingService from '../../services/booking.service';
 import { Booking, TimelineCategory } from '../../services/types';
 import { MainStackParamList } from '../../navigation/MainNavigator';
@@ -367,6 +368,16 @@ export function BookingsScreen(): React.JSX.Element {
             <View style={styles.headerIcon}>
               <Text style={styles.headerIconText}>🚗</Text>
             </View>
+          </View>
+          
+          {/* Download Button */}
+          <View style={styles.downloadContainer}>
+            <DownloadButton 
+              type="bookings" 
+              onDownloadStart={() => console.log('Download started')}
+              onDownloadComplete={(result) => console.log('Download completed', result)}
+              style={styles.downloadButton}
+            />
           </View>
           
           {/* Stats Bar */}
@@ -769,5 +780,21 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     lineHeight: 22,
     marginBottom: 32,
+  },
+  downloadContainer: {
+    marginTop: 16,
+    marginBottom: 8,
+    alignItems: 'flex-end',
+  },
+  downloadButton: {
+    backgroundColor: '#10B981',
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    borderRadius: 8,
+    shadowColor: '#10B981',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 3,
   },
 });

@@ -243,8 +243,16 @@ export const NotificationProvider: React.FC<NotificationProviderProps> = ({ chil
         loadNotifications(1);
         loadStats();
       } else {
-        console.log('❌ Failed to initialize notification system');
+        console.log('⚠️ Notification system not available, continuing without notifications');
+        // Still try to load data even if notifications fail
+        loadNotifications(1);
+        loadStats();
       }
+    }).catch(error => {
+      console.log('⚠️ Notification system error, continuing without notifications:', error.message);
+      // Still try to load data even if notifications fail
+      loadNotifications(1);
+      loadStats();
     });
   }, [loadNotifications, loadStats]);
 
