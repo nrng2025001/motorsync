@@ -236,20 +236,51 @@ export const NotificationProvider: React.FC<NotificationProviderProps> = ({ chil
   // Initialize notifications on app start
   useEffect(() => {
     console.log('🚀 Initializing notification system...');
-    NotificationService.initializeNotifications().then(success => {
-      if (success) {
+    NotificationService.initializeNotifications().then(result => {
+      if (result.success) {
         console.log('✅ Notification system initialized');
         // Load initial data
         loadNotifications(1);
         loadStats();
       } else {
-        console.log('⚠️ Notification system not available, continuing without notifications');
+        console.log('⚠️ Notification system not available:', result.error);
+        // Show user-friendly error message
+        if (result.error?.includes('Authentication failed') || result.error?.includes('Authentication expired')) {
+          Alert.alert(
+            'Authentication Required',
+            'Please log in again to enable notifications.',
+            [{ text: 'OK' }]
+          );
+        } else if (result.error?.includes('permission denied')) {
+          Alert.alert(
+            'Notification Permission',
+            'Please enable notifications in your device settings to receive updates.',
+            [{ text: 'OK' }]
+          );
+        } else if (result.error?.includes('Network error')) {
+          Alert.alert(
+            'Connection Issue',
+            'Unable to connect to notification service. Please check your internet connection.',
+            [{ text: 'OK' }]
+          );
+        } else {
+          Alert.alert(
+            'Notification Setup',
+            'Unable to set up notifications. You can try again later.',
+            [{ text: 'OK' }]
+          );
+        }
         // Still try to load data even if notifications fail
         loadNotifications(1);
         loadStats();
       }
     }).catch(error => {
       console.log('⚠️ Notification system error, continuing without notifications:', error.message);
+      Alert.alert(
+        'Notification Error',
+        'An unexpected error occurred while setting up notifications.',
+        [{ text: 'OK' }]
+      );
       // Still try to load data even if notifications fail
       loadNotifications(1);
       loadStats();
