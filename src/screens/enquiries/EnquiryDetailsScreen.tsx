@@ -20,6 +20,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { theme, spacing } from '../../utils/theme';
 import { enquiryAPI } from '../../api/enquiries';
+import usersAPI from '../../api/users';
 import { type Enquiry, EnquiryStatus, EnquiryCategory } from '../../services/types';
 import { useAuth } from '../../context/AuthContext';
 
@@ -484,8 +485,7 @@ export function EnquiryDetailsScreen({ route, navigation }: any): React.JSX.Elem
     setUpdating(true);
     try {
       // Get available staff members
-      const usersModule = await import('../../api/users');
-      const usersResponse = await usersModule.default.getUsers({ isActive: true });
+      const usersResponse = await usersAPI.getUsers({ isActive: true });
       const staffMembers = usersResponse.data.enquiries || []; // Using 'enquiries' as generic data key
       
       if (staffMembers.length === 0) {

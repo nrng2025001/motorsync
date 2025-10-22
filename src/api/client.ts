@@ -43,7 +43,8 @@ apiClient.interceptors.request.use(
       // Get Firebase ID token from current user
       const user = auth.currentUser;
       if (user) {
-        const token = await user.getIdToken();
+        // Force refresh token if it's close to expiration
+        const token = await user.getIdToken(true);
         config.headers.Authorization = `Bearer ${token}`;
         
         // Debug logging for token
@@ -55,6 +56,10 @@ apiClient.interceptors.request.use(
         if (__DEV__) {
           console.warn('⚠️ No Firebase user found for API request');
         }
+        // Clear any stale auth data if no user
+        await AsyncStorage.removeItem('@auth_token');
+        await AsyncStorage.removeItem('@auth_user');
+        await AsyncStorage.removeItem('userProfile');
       }
       
       // Log the request in development only
@@ -70,7 +75,12 @@ apiClient.interceptors.request.use(
       if (__DEV__) {
         console.error('❌ Error in request interceptor:', error);
       }
-      // Return config even if token fetch fails
+      
+      // If token fetch fails, clear auth data and return config
+      await AsyncStorage.removeItem('@auth_token');
+      await AsyncStorage.removeItem('@auth_user');
+      await AsyncStorage.removeItem('userProfile');
+      
       return config;
     }
   },
@@ -121,32 +131,54 @@ apiClient.interceptors.response.use(
         // Attempt to refresh the token
         const user = auth.currentUser;
         if (user) {
-          const newToken = await user.getIdToken(true);
-          await AsyncStorage.setItem('@auth_token', newToken);
+          if (__DEV__) {
+            console.log('🔄 Attempting to refresh Firebase token...');
+          }
           
-          // Retry the original request with new token
+          // Force refresh the token
+          const newToken = await user.getIdToken(true);
+          
+          if (__DEV__) {
+            console.log('✅ New token obtained, length:', newToken.length);
+          }
+          
+          // Update the request headers with the new token
           if (originalRequest.headers) {
             originalRequest.headers.Authorization = `Bearer ${newToken}`;
           }
+          
+          // Retry the original request with new token
           return apiClient(originalRequest);
         } else {
+          if (__DEV__) {
+            console.log('❌ No Firebase user found, clearing auth data');
+          }
+          
           // No user, clear stored data and reject
           await AsyncStorage.removeItem('@auth_token');
           await AsyncStorage.removeItem('@auth_user');
+          await AsyncStorage.removeItem('userProfile');
+          
           return Promise.reject({
             ...error,
             message: 'Session expired. Please log in again.',
+            code: 'AUTH_TOKEN_EXPIRED'
           });
         }
       } catch (refreshError) {
         if (__DEV__) {
           console.error('❌ Token refresh failed:', refreshError);
         }
+        
+        // Clear all auth data on refresh failure
         await AsyncStorage.removeItem('@auth_token');
         await AsyncStorage.removeItem('@auth_user');
+        await AsyncStorage.removeItem('userProfile');
+        
         return Promise.reject({
           ...error,
           message: 'Authentication failed. Please log in again.',
+          code: 'AUTH_REFRESH_FAILED'
         });
       }
     }

@@ -251,7 +251,6 @@ export function NewEnquiryScreen(): React.JSX.Element {
       console.log('🔄 Fetching variants for model:', modelName);
       
       // Fetch variants from backend
-      const { enquiryAPI } = await import('../../api/enquiries');
       const variantStrings = await enquiryAPI.getVariants(modelName);
       
       if (variantStrings && variantStrings.length > 0) {

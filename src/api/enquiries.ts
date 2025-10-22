@@ -196,6 +196,28 @@ class EnquiryAPI {
     
     return response.data;
   }
+
+  // Download enquiries with filters
+  async downloadEnquiries(filters: any = {}): Promise<Blob> {
+    const queryParams = new URLSearchParams();
+    
+    if (filters.format) queryParams.append('format', filters.format);
+    if (filters.startDate) queryParams.append('startDate', filters.startDate);
+    if (filters.endDate) queryParams.append('endDate', filters.endDate);
+    if (filters.status) queryParams.append('status', filters.status);
+    if (filters.category) queryParams.append('category', filters.category);
+    if (filters.search) queryParams.append('search', filters.search);
+
+    const response = await apiClient.get(`/enquiries/download?${queryParams.toString()}`, {
+      responseType: 'blob',
+    });
+    return response.data;
+  }
+
+  // Get enquiry status summary
+  async getEnquiryStatusSummary(): Promise<ApiResponse<any>> {
+    return apiClient.get('/enquiries/status-summary');
+  }
 }
 
 export const enquiryAPI = new EnquiryAPI();

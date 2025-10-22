@@ -1,4 +1,5 @@
 import { apiClient, handleApiCall, ApiResponse } from './client';
+import { EnquiriesAPI } from './enquiries';
 
 /**
  * Model interface based on backend API
@@ -38,7 +39,6 @@ class ModelsAPI {
     console.log('🔍 [ModelsAPI.getModels] Called with params:', params);
     
     // Use the enquiries API to get models
-    const { EnquiriesAPI } = await import('./enquiries');
     const response = await EnquiriesAPI.getModels();
     
     console.log('🔍 [ModelsAPI.getModels] Response:', response);
@@ -100,7 +100,6 @@ class ModelsAPI {
    */
   static async getAllVariants(): Promise<Vehicle[]> {
     // Use the enquiries API to get variants
-    const { EnquiriesAPI } = await import('./enquiries');
     const variants = await EnquiriesAPI.getVariants();
     
     // Convert string variants to Vehicle objects
@@ -117,7 +116,6 @@ class ModelsAPI {
    */
   static async getVariantsByBrand(brand: string): Promise<Vehicle[]> {
     // Use the enquiries API to get variants filtered by brand
-    const { EnquiriesAPI } = await import('./enquiries');
     const variants = await EnquiriesAPI.getVariants();
     
     // Filter variants by brand (assuming variant names contain brand)
