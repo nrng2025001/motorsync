@@ -15,19 +15,19 @@ let Constants: any = null;
 
 try {
   Notifications = require('expo-notifications');
-} catch (error) {
+} catch (error: any) {
   console.log('⚠️ expo-notifications not available:', error.message);
 }
 
 try {
   Device = require('expo-device');
-} catch (error) {
+} catch (error: any) {
   console.log('⚠️ expo-device not available:', error.message);
 }
 
 try {
   Constants = require('expo-constants');
-} catch (error) {
+} catch (error: any) {
   console.log('⚠️ expo-constants not available:', error.message);
 }
 
@@ -77,7 +77,7 @@ class NotificationService {
     } catch (error) {
       console.error('Error requesting notification permission:', error);
       // For development builds that don't support expo-notifications, return true to allow app to continue
-      if (error.message?.includes('ExpoPushTokenManager') || error.message?.includes('native module')) {
+      if ((error as any).message?.includes('ExpoPushTokenManager') || (error as any).message?.includes('native module')) {
         console.log('⚠️ Using mock permission for development build');
         return true;
       }
@@ -109,7 +109,7 @@ class NotificationService {
     } catch (error) {
       console.error('Error getting Expo push token:', error);
       // Return a mock token for development builds that don't support expo-notifications
-      if (error.message?.includes('ExpoPushTokenManager') || error.message?.includes('native module') || error.message?.includes('expodevice') || error.message?.includes('Invalid or expired Firebase token')) {
+      if ((error as any).message?.includes('ExpoPushTokenManager') || (error as any).message?.includes('native module') || (error as any).message?.includes('expodevice') || (error as any).message?.includes('Invalid or expired Firebase token')) {
         console.log('⚠️ Using mock token for development build');
         const mockToken = 'ExponentPushToken[development-build-mock-token]';
         this.fcmToken = mockToken;
@@ -236,12 +236,12 @@ class NotificationService {
       }
 
       // Listen for notification received
-      Notifications.addNotificationReceivedListener(notification => {
+      Notifications.addNotificationReceivedListener((notification: any) => {
         console.log('📱 Notification received:', notification);
       });
 
       // Listen for notification response (when user taps notification)
-      Notifications.addNotificationResponseReceivedListener(response => {
+      Notifications.addNotificationResponseReceivedListener((response: any) => {
         console.log('📱 Notification response:', response);
       });
     } catch (error) {
