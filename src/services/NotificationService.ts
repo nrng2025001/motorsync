@@ -122,7 +122,7 @@ class NotificationService {
   /**
    * Update FCM token on backend
    */
-  async updateFCMToken(token: string): Promise<boolean> {
+  async updateFCMToken(token: string): Promise<{ success: boolean; error?: string }> {
     try {
       console.log('🔄 Updating FCM token on backend...');
       
@@ -134,19 +134,30 @@ class NotificationService {
 
       if (response.status === 200 || response.status === 201) {
         console.log('✅ FCM token updated successfully');
-        return true;
+        return { success: true };
       } else {
         console.log('❌ Failed to update FCM token:', response.status);
-        return false;
+        return { success: false, error: 'Failed to update FCM token' };
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error updating FCM token:', error);
-      // Handle Firebase token errors gracefully
-      if (error.message?.includes('Invalid or expired Firebase token')) {
-        console.log('⚠️ Firebase token expired, skipping FCM token update');
-        return false;
+      
+      // Handle specific error cases
+      if (error.response?.status === 401) {
+        return { success: false, error: 'Authentication failed. Please log in again.' };
+      } else if (error.response?.status === 400) {
+        return { success: false, error: 'Invalid request data. Please try again.' };
+      } else if (error.response?.status === 404) {
+        return { success: false, error: 'User not found. Please contact support.' };
+      } else if (error.response?.status === 500) {
+        return { success: false, error: 'Server error. Please try again later.' };
+      } else if (error.message?.includes('Invalid or expired Firebase token')) {
+        return { success: false, error: 'Authentication expired. Please log in again.' };
+      } else if (error.message?.includes('Network request failed')) {
+        return { success: false, error: 'Network error. Please check your connection.' };
+      } else {
+        return { success: false, error: 'Failed to update FCM token. Please try again.' };
       }
-      return false;
     }
   }
 
@@ -176,39 +187,40 @@ class NotificationService {
   /**
    * Initialize notification system
    */
-  async initializeNotifications(): Promise<boolean> {
+  async initializeNotifications(): Promise<{ success: boolean; error?: string }> {
     try {
       console.log('🚀 Initializing notification system...');
       
       const hasPermission = await this.requestPermission();
       if (!hasPermission) {
         console.log('❌ Notification permission denied');
-        return false;
+        return { success: false, error: 'Notification permission denied' };
       }
 
       const token = await this.getFCMToken();
       if (!token) {
         console.log('❌ Failed to get FCM token');
-        return false;
+        return { success: false, error: 'Failed to get FCM token' };
       }
 
-      // Update token on backend (don't fail if this fails)
-      try {
-        await this.updateFCMToken(token);
-      } catch (error) {
-        console.log('⚠️ Failed to update FCM token on backend, continuing...');
+      // Update token on backend
+      const updateResult = await this.updateFCMToken(token);
+      if (!updateResult.success) {
+        console.log('⚠️ Failed to update FCM token on backend:', updateResult.error);
+        // Don't fail completely, just log the error
+        console.log('⚠️ Continuing without backend token update...');
       }
 
       // Set up message listeners
       this.setupMessageListeners();
 
       console.log('✅ Notification system initialized successfully');
-      return true;
-    } catch (error) {
+      return { success: true };
+    } catch (error: any) {
       console.error('Error initializing notifications:', error);
       // Don't fail the entire app if notifications fail
       console.log('⚠️ Notification system failed to initialize, but app will continue');
-      return false;
+      return { success: false, error: 'Failed to initialize notifications' };
     }
   }
 
