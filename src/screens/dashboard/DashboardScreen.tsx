@@ -176,9 +176,13 @@ export function DashboardScreen({ navigation }: any): React.JSX.Element {
       let bookings: any[] = [];
       
       // Fetch advisor-specific data using services
+      const currentUserId = state.user?.firebaseUid;
+      console.log('🔑 Dashboard - Current User ID:', currentUserId);
+      console.log('🔑 Dashboard - User Role:', userRole);
+      
       const [enquiriesResponse, bookingsData] = await Promise.all([
         enquiryAPI.getEnquiries({ page: 1, limit: 1000 }), // Get all enquiries (will be filtered by user)
-        getMyBookings(undefined, undefined, userRole), // Get advisor's assigned bookings
+        getMyBookings(undefined, undefined, userRole, currentUserId), // Get advisor's assigned bookings
       ]);
       
       // Extract data from responses - handle nested data structure
@@ -188,7 +192,6 @@ export function DashboardScreen({ navigation }: any): React.JSX.Element {
       
       
       // Apply role-based filtering for enquiries
-      const currentUserId = state.user?.firebaseUid;
       if (userRole === 'CUSTOMER_ADVISOR') {
         // Customer Advisors can only see their own enquiries
         enquiries = allEnquiries.filter((enquiry: any) => 

@@ -38,6 +38,44 @@ const remarksFieldMap: Record<string, keyof Booking> = {
 };
 
 /**
+ * Extract clean remarks content without timestamp
+ */
+const extractCleanRemarks = (remarks: string): string => {
+  if (!remarks) return '';
+  // Check if remarks end with a timestamp pattern (format: " - Jan 15, 2024, 02:30 PM")
+  const timestampPattern = /\s-\s[A-Z][a-z]{2}\s\d{1,2},\s\d{4},\s\d{1,2}:\d{2}\s(AM|PM)$/;
+  return remarks.replace(timestampPattern, '').trim();
+};
+
+/**
+ * Append timestamp to remarks content
+ */
+const appendTimestampToRemarks = (remarks: string): string => {
+  const cleanRemarks = extractCleanRemarks(remarks);
+  if (!cleanRemarks) return '';
+  
+  const timestamp = new Date().toLocaleString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+  
+  return `${cleanRemarks} - ${timestamp}`;
+};
+
+/**
+ * Extract timestamp from remarks content
+ */
+const extractTimestampFromRemarks = (remarks: string): string => {
+  if (!remarks) return '';
+  const timestampPattern = /\s-\s([A-Z][a-z]{2}\s\d{1,2},\s\d{4},\s\d{1,2}:\d{2}\s(AM|PM))$/;
+  const match = remarks.match(timestampPattern);
+  return match ? match[1] : '';
+};
+
+/**
  * Booking Details Screen Component
  * Shows comprehensive booking information with role-specific remarks
  */
@@ -95,9 +133,10 @@ export function BookingDetailsScreen({ route, navigation }: any): React.JSX.Elem
         
         setBooking(bookingData);
         
-        // Initialize editable fields
+        // Initialize editable fields - extract clean remarks without timestamp
         const userRemarksField = remarksFieldMap[userRole];
-        setEditableRemarks((bookingData[userRemarksField] as string) || '');
+        const rawRemarks = (bookingData[userRemarksField] as string) || '';
+        setEditableRemarks(extractCleanRemarks(rawRemarks));
         
         setFinanceData({
           financeRequired: bookingData.financeRequired || false,
@@ -127,8 +166,10 @@ export function BookingDetailsScreen({ route, navigation }: any): React.JSX.Elem
     setUpdating(true);
     try {
       const userRemarksField = remarksFieldMap[userRole];
+      // Append timestamp to remarks content
+      const remarksWithTimestamp = appendTimestampToRemarks(editableRemarks);
       const updateData = {
-        [userRemarksField]: editableRemarks,
+        [userRemarksField]: remarksWithTimestamp,
       };
       
       await bookingAPI.updateBooking(booking.id, updateData);
@@ -141,8 +182,9 @@ export function BookingDetailsScreen({ route, navigation }: any): React.JSX.Elem
       const bookingData = responseData?.data?.booking || responseData?.booking || responseData;
       setBooking(bookingData);
       
-      // Update the editable remarks with the new value
-      setEditableRemarks((bookingData[userRemarksField] as string) || '');
+      // Update the editable remarks with clean value (without timestamp)
+      const rawRemarks = (bookingData[userRemarksField] as string) || '';
+      setEditableRemarks(extractCleanRemarks(rawRemarks));
     } catch (err: any) {
       console.error('Error updating remarks:', err);
       Alert.alert('Error', err.message || 'Failed to update remarks');
@@ -588,10 +630,17 @@ export function BookingDetailsScreen({ route, navigation }: any): React.JSX.Elem
             ) : (
               booking.advisorRemarks && (
                 <View style={styles.remarksSection}>
-                  <Text style={styles.roleLabel}>
-                    <Icon source="account-tie" size={16} /> Customer Advisor:
-                  </Text>
-                  <Text style={styles.remarksText}>{booking.advisorRemarks}</Text>
+                  <View style={styles.remarksHeader}>
+                    <Text style={styles.roleLabel}>
+                      <Icon source="account-tie" size={16} /> Customer Advisor:
+                    </Text>
+                    {extractTimestampFromRemarks(booking.advisorRemarks) && (
+                      <Text style={styles.remarksTimestamp}>
+                        {extractTimestampFromRemarks(booking.advisorRemarks)}
+                      </Text>
+                    )}
+                  </View>
+                  <Text style={styles.remarksText}>{extractCleanRemarks(booking.advisorRemarks)}</Text>
                 </View>
               )
             )}
@@ -624,10 +673,17 @@ export function BookingDetailsScreen({ route, navigation }: any): React.JSX.Elem
             ) : (
               booking.teamLeadRemarks && (
                 <View style={styles.remarksSection}>
-                  <Text style={styles.roleLabel}>
-                    <Icon source="account-supervisor" size={16} /> Team Lead:
-                  </Text>
-                  <Text style={styles.remarksText}>{booking.teamLeadRemarks}</Text>
+                  <View style={styles.remarksHeader}>
+                    <Text style={styles.roleLabel}>
+                      <Icon source="account-supervisor" size={16} /> Team Lead:
+                    </Text>
+                    {extractTimestampFromRemarks(booking.teamLeadRemarks) && (
+                      <Text style={styles.remarksTimestamp}>
+                        {extractTimestampFromRemarks(booking.teamLeadRemarks)}
+                      </Text>
+                    )}
+                  </View>
+                  <Text style={styles.remarksText}>{extractCleanRemarks(booking.teamLeadRemarks)}</Text>
                 </View>
               )
             )}
@@ -660,10 +716,17 @@ export function BookingDetailsScreen({ route, navigation }: any): React.JSX.Elem
             ) : (
               booking.salesManagerRemarks && (
                 <View style={styles.remarksSection}>
-                  <Text style={styles.roleLabel}>
-                    <Icon source="account-star" size={16} /> Sales Manager:
-                  </Text>
-                  <Text style={styles.remarksText}>{booking.salesManagerRemarks}</Text>
+                  <View style={styles.remarksHeader}>
+                    <Text style={styles.roleLabel}>
+                      <Icon source="account-star" size={16} /> Sales Manager:
+                    </Text>
+                    {extractTimestampFromRemarks(booking.salesManagerRemarks) && (
+                      <Text style={styles.remarksTimestamp}>
+                        {extractTimestampFromRemarks(booking.salesManagerRemarks)}
+                      </Text>
+                    )}
+                  </View>
+                  <Text style={styles.remarksText}>{extractCleanRemarks(booking.salesManagerRemarks)}</Text>
                 </View>
               )
             )}
@@ -696,10 +759,17 @@ export function BookingDetailsScreen({ route, navigation }: any): React.JSX.Elem
             ) : (
               booking.generalManagerRemarks && (
                 <View style={styles.remarksSection}>
-                  <Text style={styles.roleLabel}>
-                    <Icon source="account-crown" size={16} /> General Manager:
-                  </Text>
-                  <Text style={styles.remarksText}>{booking.generalManagerRemarks}</Text>
+                  <View style={styles.remarksHeader}>
+                    <Text style={styles.roleLabel}>
+                      <Icon source="account-crown" size={16} /> General Manager:
+                    </Text>
+                    {extractTimestampFromRemarks(booking.generalManagerRemarks) && (
+                      <Text style={styles.remarksTimestamp}>
+                        {extractTimestampFromRemarks(booking.generalManagerRemarks)}
+                      </Text>
+                    )}
+                  </View>
+                  <Text style={styles.remarksText}>{extractCleanRemarks(booking.generalManagerRemarks)}</Text>
                 </View>
               )
             )}
@@ -732,10 +802,17 @@ export function BookingDetailsScreen({ route, navigation }: any): React.JSX.Elem
             ) : (
               booking.adminRemarks && (
                 <View style={styles.remarksSection}>
-                  <Text style={styles.roleLabel}>
-                    <Icon source="shield-account" size={16} /> Admin:
-                  </Text>
-                  <Text style={styles.remarksText}>{booking.adminRemarks}</Text>
+                  <View style={styles.remarksHeader}>
+                    <Text style={styles.roleLabel}>
+                      <Icon source="shield-account" size={16} /> Admin:
+                    </Text>
+                    {extractTimestampFromRemarks(booking.adminRemarks) && (
+                      <Text style={styles.remarksTimestamp}>
+                        {extractTimestampFromRemarks(booking.adminRemarks)}
+                      </Text>
+                    )}
+                  </View>
+                  <Text style={styles.remarksText}>{extractCleanRemarks(booking.adminRemarks)}</Text>
                 </View>
               )
             )}
@@ -926,11 +1003,23 @@ const styles = StyleSheet.create({
     backgroundColor: '#E8F5E9',
     borderLeftColor: '#4CAF50',
   },
+  remarksHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: spacing.xs,
+  },
   roleLabel: {
     fontSize: 14,
     fontWeight: '700',
     color: theme.colors.onSurface,
-    marginBottom: spacing.xs,
+    flex: 1,
+  },
+  remarksTimestamp: {
+    fontSize: 11,
+    color: theme.colors.onSurfaceVariant,
+    fontWeight: '500',
+    fontStyle: 'italic',
   },
   remarksText: {
     fontSize: 14,

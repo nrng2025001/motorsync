@@ -114,7 +114,8 @@ export function BookingsScreen(): React.JSX.Element {
     try {
       if (showLoading) setLoading(true);
       
-      const response = await BookingService.getMyBookings(undefined, undefined, userRole);
+      const currentUserId = authState.user?.firebaseUid || authState.user?.id;
+      const response = await BookingService.getMyBookings(undefined, undefined, userRole, currentUserId);
       
       // Ensure we have a valid bookings array
       let bookingsArray = response.bookings || [];

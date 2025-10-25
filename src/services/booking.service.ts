@@ -21,7 +21,8 @@ import { bookingAPI } from '../api/bookings';
 export async function getMyBookings(
   timeline?: TimelineCategory,
   status?: BookingStatus,
-  userRole?: string
+  userRole?: string,
+  currentUserId?: string
 ): Promise<{ bookings: Booking[]; pagination: any; timeline?: string }> {
   let bookings: any[];
   
@@ -43,6 +44,45 @@ export async function getMyBookings(
       bookings = responseData;
     } else {
       bookings = [];
+    }
+    
+    // Client-side filtering: Ensure customer advisors only see their assigned bookings
+    if (currentUserId) {
+      console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+      console.log('🔍 FILTERING BOOKINGS FOR USER:', currentUserId);
+      console.log('📊 Total bookings received:', bookings.length);
+      console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+      
+      const beforeFilter = bookings.length;
+      
+      bookings = bookings.filter((booking: any) => {
+        // Explicitly check if booking has an advisorId
+        const hasAdvisorId = booking.advisorId && booking.advisorId.trim() !== '';
+        
+        // CRITICAL: Only match on advisorId - this is the primary assignment field
+        const isAssignedToCurrentUser = booking.advisorId === currentUserId;
+        
+        // Only show bookings that:
+        // 1. Have an advisorId AND
+        // 2. Are assigned to the current user
+        const shouldShow = hasAdvisorId && isAssignedToCurrentUser;
+        
+        return shouldShow;
+      });
+      
+      console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+      console.log('📊 Before filter:', beforeFilter);
+      console.log('📊 After filter:', bookings.length);
+      console.log('📊 Removed:', beforeFilter - bookings.length);
+      console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+      
+      if (bookings.length === beforeFilter && beforeFilter > 4) {
+        console.log('⚠️ WARNING: All bookings have same advisorId as current user!');
+        console.log('⚠️ This likely indicates a backend data issue.');
+        console.log('⚠️ Please check the database to ensure advisorId is correct for each booking.');
+      }
+    } else {
+      console.log('⚠️ No currentUserId provided - skipping filter');
     }
   } else {
     // Managers see all bookings
@@ -70,12 +110,38 @@ export async function getMyBookings(
     bookings = [];
   }
   
+  // Additional safety filter: For customer advisors, ensure we NEVER show bookings without advisorId
+  if (userRole === 'CUSTOMER_ADVISOR') {
+    const beforeAdvisorCheck = bookings.length;
+    bookings = bookings.filter((booking: any) => {
+      const hasAdvisorId = booking.advisorId && typeof booking.advisorId === 'string' && booking.advisorId.trim() !== '';
+      if (!hasAdvisorId) {
+        console.log('🚫 Removed booking without advisorId:', booking.id);
+      }
+      return hasAdvisorId;
+    });
+    
+    if (bookings.length !== beforeAdvisorCheck) {
+      console.log('🚫 Removed bookings without advisorId:', beforeAdvisorCheck - bookings.length);
+    }
+  }
+  
+  // Remove duplicates based on booking ID (applies to all roles)
+  const uniqueBookings = Array.from(
+    new Map(bookings.map((booking: any) => [booking.id, booking])).values()
+  );
+  
+  if (uniqueBookings.length !== bookings.length) {
+    console.log('⚠️ Removed duplicate bookings:', bookings.length - uniqueBookings.length);
+    console.log('📊 After deduplication:', uniqueBookings.length);
+  }
+  
   return {
-    bookings: bookings as Booking[],
+    bookings: uniqueBookings as Booking[],
     pagination: {
       page: 1,
       limit: 1000,
-      total: bookings.length,
+      total: uniqueBookings.length,
       totalPages: 1,
     },
     timeline
@@ -87,9 +153,10 @@ export async function getMyBookings(
  */
 export async function getBookingsByTimeline(
   timeline: TimelineCategory,
-  userRole?: string
+  userRole?: string,
+  currentUserId?: string
 ): Promise<{ bookings: Booking[]; pagination: any }> {
-  return getMyBookings(timeline, undefined, userRole);
+  return getMyBookings(timeline, undefined, userRole, currentUserId);
 }
 
 /**
@@ -166,7 +233,7 @@ export async function addBookingRemarks(
 /**
  * Get bookings stats (count by status and timeline)
  */
-export async function getBookingsStats(): Promise<{
+export async function getBookingsStats(userRole?: string, currentUserId?: string): Promise<{
   total: number;
   today: number;
   deliveryToday: number;
@@ -181,11 +248,11 @@ export async function getBookingsStats(): Promise<{
   };
 }> {
   const [allBookings, today, deliveryToday, pendingUpdate, overdue] = await Promise.all([
-    getMyBookings(),
-    getTodayBookings(),
-    getDeliveryTodayBookings(),
-    getPendingUpdateBookings(),
-    getOverdueBookings(),
+    getMyBookings(undefined, undefined, userRole, currentUserId),
+    getTodayBookings(userRole),
+    getDeliveryTodayBookings(userRole),
+    getPendingUpdateBookings(userRole),
+    getOverdueBookings(userRole),
   ]);
   
   const bookings = allBookings.bookings || [];
