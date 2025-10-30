@@ -413,10 +413,10 @@ export function DashboardScreen({ navigation }: any): React.JSX.Element {
         {/* Enquiries Overview Section */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>
-            Enquiries Overview
+            Hot Enquiry Overview
           </Text>
           <Text style={styles.sectionSubtitle}>
-            Track and manage customer enquiries
+            TRACK & MANAGE YOUR ENQUIRY.
           </Text>
           
           {/* Hot Enquiries Card */}

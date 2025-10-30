@@ -655,13 +655,13 @@ export function EnquiriesScreen(): React.JSX.Element {
           <View style={styles.headerTop}>
             <View>
               <Text variant="displaySmall" style={styles.title}>
-                Enquiries
+                {authState.user?.name || 'Employee'}
               </Text>
               <Text variant="bodyMedium" style={styles.subtitle}>
-                Manage your sales pipeline
+                {authState.user?.dealership?.name || 'Dealership'}
               </Text>
               <Text variant="bodySmall" style={styles.roleIndicator}>
-                {getRoleDisplayNameWithHierarchy(userRole)} • {dataFilterOptions.canSeeAll ? 'All Data' : dataFilterOptions.canSeeTeam ? 'Team Data' : 'Own Data'} • {canCreateEnquiry() ? 'Can Create' : 'View Only'}
+                Employee Code: {authState.user?.employeeId || '—'}
               </Text>
             </View>
             <View style={styles.headerIcon}>
