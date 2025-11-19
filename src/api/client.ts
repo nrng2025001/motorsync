@@ -302,17 +302,40 @@ export interface ApiError {
  * Utility function to handle API calls with consistent error handling
  */
 export async function handleApiCall<T>(
-  apiCall: () => Promise<AxiosResponse<ApiResponse<T>>>
+  apiCall: () => Promise<AxiosResponse<ApiResponse<T> | any>>
 ): Promise<T> {
   try {
     const response = await apiCall();
-    const apiResponse = response.data;
-    
-    if (!apiResponse.success) {
-      throw new Error(apiResponse.message || 'API call failed');
+    const payload: any = response.data;
+
+    const hasExplicitSuccess = typeof payload?.success === 'boolean';
+    const statusFlag =
+      typeof payload?.status === 'string' &&
+      ['success', 'ok', 'completed'].includes(payload.status.toLowerCase());
+
+    const isHttpSuccess = response.status >= 200 && response.status < 300;
+    const isApiSuccess =
+      (hasExplicitSuccess && payload.success === true) ||
+      statusFlag ||
+      (!hasExplicitSuccess && !statusFlag);
+
+    if (!isHttpSuccess || !isApiSuccess) {
+      const message =
+        payload?.message ||
+        payload?.error ||
+        payload?.detail ||
+        `API call failed with status ${response.status}`;
+      throw new Error(message);
     }
-    
-    return apiResponse.data as T;
+
+    const data =
+      payload?.data !== undefined
+        ? payload.data
+        : payload?.results !== undefined
+        ? payload.results
+        : payload;
+
+    return data as T;
   } catch (error) {
     console.error('API call failed:', error);
     throw error;

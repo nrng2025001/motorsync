@@ -4,7 +4,6 @@
  */
 
 import { getAuth } from 'firebase/auth';
-import { ApiResponse } from './types';
 
 export const API_URL = 'https://automotive-backend-frqe.onrender.com/api';
 
@@ -47,20 +46,35 @@ export async function apiRequest<T>(
       },
     });
     
-    const result: ApiResponse<T> = await response.json();
-    
-    // Handle non-2xx responses
+    const payload: any = await response.json();
+
     if (!response.ok) {
-      throw new Error(result.message || `HTTP ${response.status}: ${response.statusText}`);
+      const message =
+        payload?.message || payload?.error || `HTTP ${response.status}: ${response.statusText}`;
+      throw new Error(message);
     }
-    
-    // Handle API-level errors
-    if (!result.success) {
-      throw new Error(result.message || 'API request failed');
+
+    const hasExplicitSuccess = typeof payload?.success === 'boolean';
+    const statusFlag =
+      typeof payload?.status === 'string' &&
+      ['success', 'ok', 'completed'].includes(payload.status.toLowerCase());
+    const isApiSuccess =
+      (hasExplicitSuccess && payload.success === true) ||
+      statusFlag ||
+      (!hasExplicitSuccess && !statusFlag);
+
+    if (!isApiSuccess) {
+      throw new Error(payload?.message || payload?.error || 'API request failed');
     }
-    
-    // Return the data
-    return result.data as T;
+
+    const data =
+      payload?.data !== undefined
+        ? payload.data
+        : payload?.results !== undefined
+        ? payload.results
+        : payload;
+
+    return data as T;
   } catch (error: any) {
     console.error('API Request Error:', endpoint, error);
     

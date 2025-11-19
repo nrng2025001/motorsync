@@ -24,7 +24,7 @@ import { theme, spacing } from '../../utils/theme';
 import { useAuth } from '../../context/AuthContext';
 import { getUserRole } from '../../utils/roleUtils';
 import { bookingAPI } from '../../api/bookings';
-import { type Booking, BookingStatus } from '../../services/types';
+import { type Booking, BookingStatus, StockAvailability } from '../../services/types';
 
 /**
  * Role to remarks field mapping
@@ -588,8 +588,16 @@ export function BookingDetailsScreen({ route, navigation }: any): React.JSX.Elem
             )}
             
             <View style={styles.infoRow}>
-              <Text style={styles.infoLabel}>Back Order:</Text>
-              <Text style={styles.infoValue}>{booking.backOrderStatus ? 'Yes' : 'No'}</Text>
+              <Text style={styles.infoLabel}>
+                {booking.stockAvailability === StockAvailability.VEHICLE_AVAILABLE
+                  ? 'Chassis Number:'
+                  : 'Allocation / Order Number:'}
+              </Text>
+              <Text style={styles.infoValue}>
+                {booking.stockAvailability === StockAvailability.VEHICLE_AVAILABLE
+                  ? booking.chassisNumber || 'Not assigned'
+                  : booking.allocationOrderNumber || 'Not assigned'}
+              </Text>
             </View>
           </Card.Content>
         </Card>

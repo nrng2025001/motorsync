@@ -22,7 +22,8 @@ export async function getMyBookings(
   timeline?: TimelineCategory,
   status?: BookingStatus,
   userRole?: string,
-  currentUserId?: string
+  currentUserId?: string,
+  options?: { dealershipId?: string; dealershipCode?: string; scope?: string }
 ): Promise<{ bookings: Booking[]; pagination: any; timeline?: string }> {
   let bookings: any[];
   
@@ -32,6 +33,9 @@ export async function getMyBookings(
       page: 1,
       limit: 1000,
       status: status,
+      dealershipId: options?.dealershipId,
+      dealershipCode: options?.dealershipCode,
+      scope: options?.scope,
     });
     
     // Extract bookings from response - handle different API response structures
@@ -90,6 +94,9 @@ export async function getMyBookings(
       page: 1,
       limit: 1000,
       status: status,
+      dealershipId: options?.dealershipId,
+      dealershipCode: options?.dealershipCode,
+      scope: options?.scope,
     });
     
     // Extract bookings from response - handle different API response structures
@@ -154,40 +161,53 @@ export async function getMyBookings(
 export async function getBookingsByTimeline(
   timeline: TimelineCategory,
   userRole?: string,
-  currentUserId?: string
+  currentUserId?: string,
+  options?: { dealershipId?: string; dealershipCode?: string; scope?: string }
 ): Promise<{ bookings: Booking[]; pagination: any }> {
-  return getMyBookings(timeline, undefined, userRole, currentUserId);
+  return getMyBookings(timeline, undefined, userRole, currentUserId, options);
 }
 
 /**
  * Get bookings for today
  */
-export async function getTodayBookings(userRole?: string): Promise<Booking[]> {
-  const response = await getBookingsByTimeline('today', userRole);
+export async function getTodayBookings(
+  userRole?: string,
+  options?: { dealershipId?: string; dealershipCode?: string; scope?: string }
+): Promise<Booking[]> {
+  const response = await getBookingsByTimeline('today', userRole, undefined, options);
   return response.bookings || [];
 }
 
 /**
  * Get bookings with delivery today
  */
-export async function getDeliveryTodayBookings(userRole?: string): Promise<Booking[]> {
-  const response = await getBookingsByTimeline('delivery_today', userRole);
+export async function getDeliveryTodayBookings(
+  userRole?: string,
+  options?: { dealershipId?: string; dealershipCode?: string; scope?: string }
+): Promise<Booking[]> {
+  const response = await getBookingsByTimeline('delivery_today', userRole, undefined, options);
   return response.bookings || [];
 }
 
 /**
  * Get bookings pending update (>24h old, still PENDING/ASSIGNED)
  */
-export async function getPendingUpdateBookings(userRole?: string): Promise<Booking[]> {
-  const response = await getBookingsByTimeline('pending_update', userRole);
+export async function getPendingUpdateBookings(
+  userRole?: string,
+  options?: { dealershipId?: string; dealershipCode?: string; scope?: string }
+): Promise<Booking[]> {
+  const response = await getBookingsByTimeline('pending_update', userRole, undefined, options);
   return response.bookings || [];
 }
 
 /**
  * Get overdue bookings (past delivery date, not delivered/cancelled)
  */
-export async function getOverdueBookings(userRole?: string): Promise<Booking[]> {
-  const response = await getBookingsByTimeline('overdue', userRole);
+export async function getOverdueBookings(
+  userRole?: string,
+  options?: { dealershipId?: string; dealershipCode?: string; scope?: string }
+): Promise<Booking[]> {
+  const response = await getBookingsByTimeline('overdue', userRole, undefined, options);
   return response.bookings || [];
 }
 
@@ -233,7 +253,11 @@ export async function addBookingRemarks(
 /**
  * Get bookings stats (count by status and timeline)
  */
-export async function getBookingsStats(userRole?: string, currentUserId?: string): Promise<{
+export async function getBookingsStats(
+  userRole?: string,
+  currentUserId?: string,
+  options?: { dealershipId?: string; dealershipCode?: string; scope?: string }
+): Promise<{
   total: number;
   today: number;
   deliveryToday: number;
@@ -248,11 +272,11 @@ export async function getBookingsStats(userRole?: string, currentUserId?: string
   };
 }> {
   const [allBookings, today, deliveryToday, pendingUpdate, overdue] = await Promise.all([
-    getMyBookings(undefined, undefined, userRole, currentUserId),
-    getTodayBookings(userRole),
-    getDeliveryTodayBookings(userRole),
-    getPendingUpdateBookings(userRole),
-    getOverdueBookings(userRole),
+    getMyBookings(undefined, undefined, userRole, currentUserId, options),
+    getTodayBookings(userRole, options),
+    getDeliveryTodayBookings(userRole, options),
+    getPendingUpdateBookings(userRole, options),
+    getOverdueBookings(userRole, options),
   ]);
   
   const bookings = allBookings.bookings || [];

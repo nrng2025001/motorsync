@@ -194,6 +194,41 @@ export function capitalizeWords(text: string): string {
     .join(' ');
 }
 
+const ENQUIRY_SOURCE_LABELS: Record<string, string> = {
+  WALK_IN: 'Walk In',
+  PHONE_CALL: 'Phone Call',
+  WEBSITE: 'Website',
+  DIGITAL: 'Digital',
+  SOCIAL_MEDIA: 'Social Media',
+  REFERRAL: 'Referral',
+  ADVERTISEMENT: 'Advertisement',
+  EMAIL: 'Email',
+  SHOWROOM_VISIT: 'Showroom Visit',
+  EVENT: 'Event',
+  BTL_ACTIVITY: 'BTL Activity',
+  WHATSAPP: 'WhatsApp',
+  OUTBOUND_CALL: 'Outbound Call',
+  OTHER: 'Other',
+};
+
+/**
+ * Format enquiry source value into human readable label
+ * @param source - Backend source value
+ */
+export function formatEnquirySource(source?: string): string {
+  if (!source) return 'Not specified';
+  if (ENQUIRY_SOURCE_LABELS[source]) {
+    return ENQUIRY_SOURCE_LABELS[source];
+  }
+
+  return source
+    .split('_')
+    .map((segment) =>
+      segment.charAt(0).toUpperCase() + segment.slice(1).toLowerCase()
+    )
+    .join(' ');
+}
+
 /**
  * Generate initials from name
  * 

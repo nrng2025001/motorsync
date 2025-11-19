@@ -1,11 +1,13 @@
 import { apiClient } from './client';
-import { 
-  Enquiry, 
-  EnquiryFilters, 
-  PaginatedResponse, 
+import {
+  Enquiry,
+  EnquiryFilters,
+  PaginatedResponse,
   ApiResponse,
   EnquiryCategory,
-  EnquiryStatus 
+  EnquiryStatus,
+  CreateEnquiryRequest,
+  UpdateEnquiryRequest,
 } from '../services/types';
 
 class EnquiryAPI {
@@ -19,6 +21,9 @@ class EnquiryAPI {
     if (params?.search) queryParams.append('search', params.search);
     if (params?.sortBy) queryParams.append('sortBy', params.sortBy);
     if (params?.sortOrder) queryParams.append('sortOrder', params.sortOrder);
+    if (params?.dealershipId) queryParams.append('dealershipId', params.dealershipId);
+    if (params?.dealershipCode) queryParams.append('dealershipCode', params.dealershipCode);
+    if (params?.scope) queryParams.append('scope', params.scope);
 
     return apiClient.get(`/enquiries?${queryParams.toString()}`);
   }
@@ -28,31 +33,11 @@ class EnquiryAPI {
   }
 
 
-  async createEnquiry(data: {
-  customerName: string;
-  customerContact: string;
-  customerEmail?: string;
-  variant?: string;
-  color?: string;
-  expectedBookingDate?: string;
-  caRemarks?: string;
-  }): Promise<ApiResponse<Enquiry>> {
+  async createEnquiry(data: CreateEnquiryRequest): Promise<ApiResponse<Enquiry>> {
     return apiClient.post('/enquiries', data);
 }
 
-  async updateEnquiry(id: string, data: {
-  customerName?: string;
-  customerContact?: string;
-  customerEmail?: string;
-  variant?: string;
-  color?: string;
-    expectedBookingDate?: string;
-  status?: EnquiryStatus;
-    category?: EnquiryCategory;
-  caRemarks?: string;
-    gmRemarks?: string;
-    assignedToUserId?: string;
-  }): Promise<ApiResponse<Enquiry>> {
+  async updateEnquiry(id: string, data: UpdateEnquiryRequest): Promise<ApiResponse<Enquiry>> {
     return apiClient.put(`/enquiries/${id}`, data);
   }
 

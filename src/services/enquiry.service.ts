@@ -35,7 +35,8 @@ export async function createEnquiry(data: CreateEnquiryRequest): Promise<Enquiry
 export async function getMyEnquiries(
   page: number = 1,
   limit: number = 100,
-  category?: EnquiryCategory
+  category?: EnquiryCategory,
+  options?: { dealershipId?: string; dealershipCode?: string }
 ): Promise<{ enquiries: Enquiry[]; pagination: any }> {
   const response = await enquiryAPI.getEnquiries({
     page,
@@ -43,6 +44,8 @@ export async function getMyEnquiries(
     category,
     sortBy: 'createdAt',
     sortOrder: 'desc',
+    dealershipId: options?.dealershipId,
+    dealershipCode: options?.dealershipCode,
   });
   
   // Handle different response structures

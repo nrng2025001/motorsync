@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   View,
   StyleSheet,
@@ -15,14 +15,18 @@ import {
   Chip,
   ActivityIndicator,
   TextInput,
+  Portal,
+  Dialog,
 } from 'react-native-paper';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { theme, spacing } from '../../utils/theme';
 import { enquiryAPI } from '../../api/enquiries';
 import usersAPI from '../../api/users';
-import { type Enquiry, EnquiryStatus, EnquiryCategory } from '../../services/types';
+import { type Enquiry, EnquiryStatus, EnquiryCategory, RemarkHistoryEntry } from '../../services/types';
 import { useAuth } from '../../context/AuthContext';
+import { remarksAPI } from '../../api/remarks';
+import { formatDate, formatDateTime, formatEnquirySource } from '../../utils/formatting';
 
 
 
@@ -164,6 +168,40 @@ const CategoryPicker = ({
     }
   };
 
+  const handleAddRemark = async () => {
+    if (!enquiry) return;
+
+    const trimmedRemark = remarkInput.trim();
+    if (!trimmedRemark) {
+      setRemarkError('Please enter a remark before submitting.');
+      return;
+    }
+
+    try {
+      setSubmittingRemark(true);
+      const newRemark = await remarksAPI.addEnquiryRemark(enquiry.id, trimmedRemark);
+      setRemarkHistory((prev) =>
+        [newRemark, ...prev].filter((entry) => !entry.cancelled).slice(0, 3)
+      );
+      setEnquiry((prev) =>
+        prev
+          ? {
+              ...prev,
+              remarkHistory: [newRemark, ...(prev.remarkHistory || [])],
+            }
+          : prev
+      );
+      setRemarkInput('');
+      setRemarkError(null);
+      Alert.alert('Success', 'Remark added successfully.');
+    } catch (err: any) {
+      console.error('❌ Error adding remark:', err);
+      setRemarkError(err.message || 'Failed to add remark. Please try again.');
+    } finally {
+      setSubmittingRemark(false);
+    }
+  };
+
   const handleConfirmRemarks = () => {
     if (selectedCategory) {
       onCategoryChange(selectedCategory, remarks);
@@ -171,6 +209,84 @@ const CategoryPicker = ({
       setRemarks('');
       setSelectedCategory(null);
     }
+  };
+
+  const currentUserId = useMemo(() => {
+    return (
+      (authState.user as any)?.firebaseUid ||
+      (authState.user as any)?.user?.firebaseUid ||
+      authState.user?.firebaseUid ||
+      authState.user?.id ||
+      ''
+    );
+  }, [authState.user]);
+
+  const currentUserRole = authState.user?.role?.name || '';
+
+  const canCancelRemark = (remark: RemarkHistoryEntry): boolean => {
+    if (!remark || remark.cancelled) return false;
+    if (!currentUserId) return false;
+
+    const elevatedRoles = ['ADMIN', 'GENERAL_MANAGER', 'SALES_MANAGER', 'TEAM_LEAD'];
+    if (elevatedRoles.includes(currentUserRole)) {
+      return true;
+    }
+
+    return remark.createdBy?.id === currentUserId;
+  };
+
+  const openCancelRemarkDialog = (remark: RemarkHistoryEntry) => {
+    setRemarkToCancel(remark);
+    setCancelReason('');
+    setCancelDialogVisible(true);
+  };
+
+  const handleCancelRemark = async () => {
+    if (!remarkToCancel) return;
+    const trimmedReason = cancelReason.trim();
+    if (!trimmedReason) {
+      Alert.alert('Cancellation Reason', 'Please provide a reason for cancelling this remark.');
+      return;
+    }
+
+    try {
+      setCancellingRemark(true);
+      await remarksAPI.cancelRemark(remarkToCancel.id, trimmedReason);
+
+      setRemarkHistory((prev) =>
+        prev.filter((entry) => entry.id !== remarkToCancel.id)
+      );
+
+      setEnquiry((prev) =>
+        prev
+          ? {
+              ...prev,
+              remarkHistory: (prev.remarkHistory || []).map((entry) =>
+                entry.id === remarkToCancel.id
+                  ? { ...entry, cancelled: true, cancellationReason: trimmedReason }
+                  : entry
+              ),
+            }
+          : prev
+      );
+
+      setCancelDialogVisible(false);
+      setRemarkToCancel(null);
+      setCancelReason('');
+      Alert.alert('Remark Cancelled', 'The remark has been cancelled successfully.');
+    } catch (err: any) {
+      console.error('❌ Error cancelling remark:', err);
+      Alert.alert('Error', err.message || 'Failed to cancel remark. Please try again.');
+    } finally {
+      setCancellingRemark(false);
+    }
+  };
+
+  const closeCancelDialog = () => {
+    if (cancellingRemark) return;
+    setCancelDialogVisible(false);
+    setRemarkToCancel(null);
+    setCancelReason('');
   };
 
   return (
@@ -261,6 +377,14 @@ export function EnquiryDetailsScreen({ route, navigation }: any): React.JSX.Elem
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [updating, setUpdating] = useState(false);
+  const [remarkHistory, setRemarkHistory] = useState<RemarkHistoryEntry[]>([]);
+  const [remarkInput, setRemarkInput] = useState('');
+  const [submittingRemark, setSubmittingRemark] = useState(false);
+  const [remarkError, setRemarkError] = useState<string | null>(null);
+  const [cancelDialogVisible, setCancelDialogVisible] = useState(false);
+  const [cancellingRemark, setCancellingRemark] = useState(false);
+  const [cancelReason, setCancelReason] = useState('');
+  const [remarkToCancel, setRemarkToCancel] = useState<RemarkHistoryEntry | null>(null);
 
   console.log('🔍 EnquiryDetailsScreen mounted with route params:', route?.params);
   console.log('🔍 Enquiry ID from route:', enquiryId);
@@ -363,6 +487,14 @@ export function EnquiryDetailsScreen({ route, navigation }: any): React.JSX.Elem
         }
         
         setEnquiry(enquiryData);
+        if (Array.isArray(enquiryData.remarkHistory)) {
+          const latestRemarks = enquiryData.remarkHistory
+            .filter((entry: RemarkHistoryEntry) => !entry.cancelled)
+            .slice(0, 3);
+          setRemarkHistory(latestRemarks);
+        } else {
+          setRemarkHistory([]);
+        }
         setError(null);
         console.log('✅ Enquiry data set successfully');
       } catch (err: any) {
@@ -432,48 +564,6 @@ export function EnquiryDetailsScreen({ route, navigation }: any): React.JSX.Elem
     } finally {
       setUpdating(false);
     }
-  };
-
-  /**
-   * Handle add note
-   */
-  const handleAddNote = () => {
-    Alert.prompt(
-      'Add Note',
-      'Enter your note for this enquiry:',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        { 
-          text: 'Add Note', 
-          onPress: async (note: string | undefined) => {
-            if (!note || !note.trim()) return;
-            if (!enquiry) return;
-            
-            setUpdating(true);
-            try {
-              console.log('🔄 [EnquiryDetailsScreen] Adding note:', note);
-              await enquiryAPI.addNotes(enquiry.id, note.trim());
-              
-              // Refresh enquiry data to get updated notes
-              const response = await enquiryAPI.getEnquiryById(enquiry.id);
-              const updatedEnquiry = response.data || response;
-              setEnquiry(updatedEnquiry as Enquiry);
-              
-              Alert.alert('Success', 'Note added successfully!');
-            } catch (error: any) {
-              console.error('❌ [EnquiryDetailsScreen] Error adding note:', error);
-              Alert.alert(
-                'Error', 
-                `Failed to add note: ${error.message || 'Please try again.'}`
-              );
-            } finally {
-              setUpdating(false);
-            }
-          }
-        }
-      ],
-      'plain-text'
-    );
   };
 
   /**
@@ -727,6 +817,40 @@ export function EnquiryDetailsScreen({ route, navigation }: any): React.JSX.Elem
               </Text>
             </View>
           </View>
+          {enquiry.location && (
+            <View style={styles.infoRow}>
+              <View style={styles.iconContainer}>
+                <Icon source="map-marker" size={20} color={theme.colors.onSurfaceVariant} />
+              </View>
+              <View style={styles.infoContent}>
+                <Text variant="bodySmall" style={styles.infoLabel}>
+                  Location
+                </Text>
+                <Text variant="bodyLarge" style={styles.infoValue}>
+                  {enquiry.location}
+                </Text>
+              </View>
+            </View>
+          )}
+          {enquiry.nextFollowUpDate && (
+            <View style={styles.infoRow}>
+              <View style={styles.iconContainer}>
+                <Icon source="calendar" size={20} color={theme.colors.onSurfaceVariant} />
+              </View>
+              <View style={styles.infoContent}>
+                <Text variant="bodySmall" style={styles.infoLabel}>
+                  Next Follow-up Date
+                </Text>
+                <Text variant="bodyLarge" style={styles.infoValue}>
+                  {formatDate(enquiry.nextFollowUpDate, {
+                    day: '2-digit',
+                    month: 'short',
+                    year: 'numeric',
+                  })}
+                </Text>
+              </View>
+            </View>
+          )}
         </View>
 
         {/* Vehicle of Interest */}
@@ -749,6 +873,26 @@ export function EnquiryDetailsScreen({ route, navigation }: any): React.JSX.Elem
               </View>
             </View>
 
+          {enquiry.expectedBookingDate && (
+            <View style={styles.infoRow}>
+              <View style={styles.iconContainer}>
+                <Icon source="calendar" size={20} color={theme.colors.onSurfaceVariant} />
+              </View>
+              <View style={styles.infoContent}>
+                <Text variant="bodySmall" style={styles.infoLabel}>
+                  Expected Booking Date
+                </Text>
+                <Text variant="bodyLarge" style={styles.infoValue}>
+                  {formatDate(enquiry.expectedBookingDate, {
+                    day: '2-digit',
+                    month: 'short',
+                    year: 'numeric',
+                  })}
+                </Text>
+              </View>
+            </View>
+          )}
+
           <View style={styles.infoRow}>
             <View style={styles.iconContainer}>
               <Icon source="information" size={20} color={theme.colors.onSurfaceVariant} />
@@ -758,7 +902,7 @@ export function EnquiryDetailsScreen({ route, navigation }: any): React.JSX.Elem
                 Source
               </Text>
               <Text variant="bodyLarge" style={styles.infoValue}>
-                {enquiry.source || 'Not specified'}
+                {formatEnquirySource(enquiry.source)}
               </Text>
             </View>
           </View>
@@ -775,6 +919,15 @@ export function EnquiryDetailsScreen({ route, navigation }: any): React.JSX.Elem
             onCategoryChange={handleCategoryChange}
             disabled={updating}
           />
+
+          <Button
+            mode="outlined"
+            onPress={handleAssignToStaff}
+            style={styles.statusButton}
+            contentStyle={styles.statusButtonContent}
+          >
+            Assign to Staff
+          </Button>
         </View>
 
         {/* Enquiry Status */}
@@ -796,42 +949,125 @@ export function EnquiryDetailsScreen({ route, navigation }: any): React.JSX.Elem
               </Text>
             </View>
           </View>
-        </View>
-
-
-        {/* Actions */}
-        <View style={styles.section}>
-          <Text variant="titleLarge" style={styles.sectionTitle}>
-            Actions
-          </Text>
 
           <Button
             mode="contained"
             onPress={handleUpdateStatus}
-            style={styles.actionButton}
-            contentStyle={styles.actionButtonContent}
+            style={styles.statusButton}
+            contentStyle={styles.statusButtonContent}
           >
             Update Status
           </Button>
-
-          <Button
-            mode="outlined"
-            onPress={handleAddNote}
-            style={styles.actionButton}
-            contentStyle={styles.actionButtonContent}
-          >
-            Add Note
-          </Button>
-
-          <Button
-            mode="outlined"
-            onPress={handleAssignToStaff}
-            style={styles.actionButton}
-            contentStyle={styles.actionButtonContent}
-          >
-            Assign to Staff
-          </Button>
         </View>
+
+        {/* Recent Remarks */}
+        <Card style={styles.section}>
+          <Card.Content>
+            <Text variant="titleLarge" style={styles.sectionTitle}>
+              Recent Remarks
+            </Text>
+
+            {remarkHistory.length === 0 ? (
+              <View style={styles.remarkEmptyState}>
+                <Text style={styles.remarkEmptyText}>No remarks yet.</Text>
+              </View>
+            ) : (
+              <View style={styles.remarksList}>
+                {remarkHistory.map((remark, index) => (
+                  <View
+                    key={remark.id || `${remark.createdAt}-${index}`}
+                    style={[
+                      styles.remarkItem,
+                      index === remarkHistory.length - 1 && styles.remarkItemLast,
+                    ]}
+                  >
+                    <View style={styles.remarkHeaderRow}>
+                      <View>
+                        <Text style={styles.remarkAuthor}>
+                          {remark.createdBy?.name || 'Team Member'}
+                        </Text>
+                        {remark.createdBy?.role?.name && (
+                          <Text style={styles.remarkRole}>{remark.createdBy.role.name}</Text>
+                        )}
+                      </View>
+                      <Text style={styles.remarkTimestamp}>
+                        {formatDateTime(remark.createdAt)}
+                      </Text>
+                    </View>
+                    <Text style={styles.remarkBody}>{remark.remark}</Text>
+                    {remark.cancelled && (
+                      <Text style={styles.remarkCancelled}>
+                        Cancelled{remark.cancellationReason ? `: ${remark.cancellationReason}` : ''}
+                      </Text>
+                    )}
+                    {!remark.cancelled && canCancelRemark(remark) && (
+                      <TouchableOpacity
+                        style={styles.remarkCancelButton}
+                        onPress={() => openCancelRemarkDialog(remark)}
+                      >
+                        <Text style={styles.remarkCancelButtonText}>Cancel Remark</Text>
+                      </TouchableOpacity>
+                    )}
+                  </View>
+                ))}
+              </View>
+            )}
+
+            <Divider style={styles.remarkDivider} />
+
+            <View style={styles.remarkForm}>
+              <TextInput
+                label="Add a remark"
+                value={remarkInput}
+                onChangeText={(text) => {
+                  setRemarkInput(text);
+                  if (remarkError) setRemarkError(null);
+                }}
+                mode="outlined"
+                multiline
+                numberOfLines={3}
+                placeholder="Share an update or next step..."
+                style={styles.remarkInput}
+              />
+              {remarkError && <Text style={styles.remarkErrorText}>{remarkError}</Text>}
+              <Button
+                mode="contained"
+                onPress={handleAddRemark}
+                loading={submittingRemark}
+                disabled={submittingRemark || !remarkInput.trim()}
+              >
+                Add Remark
+              </Button>
+            </View>
+          </Card.Content>
+        </Card>
+        <Portal>
+          <Dialog visible={cancelDialogVisible} onDismiss={closeCancelDialog}>
+            <Dialog.Title>Cancel Remark</Dialog.Title>
+            <Dialog.Content>
+              <Text style={styles.cancelDialogDescription}>
+                Provide a reason for cancelling this remark. This reason will be stored with the
+                remark history.
+              </Text>
+              <TextInput
+                mode="outlined"
+                label="Cancellation Reason"
+                value={cancelReason}
+                onChangeText={setCancelReason}
+                multiline
+                style={styles.cancelDialogInput}
+              />
+            </Dialog.Content>
+            <Dialog.Actions>
+              <Button onPress={closeCancelDialog} disabled={cancellingRemark}>
+                Dismiss
+              </Button>
+              <Button onPress={handleCancelRemark} loading={cancellingRemark} disabled={cancellingRemark}>
+                Submit
+              </Button>
+            </Dialog.Actions>
+          </Dialog>
+        </Portal>
       </ScrollView>
     </SafeAreaView>
   );
@@ -933,12 +1169,14 @@ const styles = StyleSheet.create({
     color: theme.colors.onSurfaceVariant,
     fontStyle: 'italic',
   },
-  actionButton: {
-    marginBottom: spacing.md,
+  statusButton: {
+    marginTop: spacing.md,
+    alignSelf: 'flex-start',
     borderRadius: 8,
   },
-  actionButtonContent: {
+  statusButtonContent: {
     paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.md,
   },
   categoryBanner: {
     flexDirection: 'row',
@@ -1049,6 +1287,91 @@ const styles = StyleSheet.create({
   },
   remarksConfirmButton: {
     flex: 1,
+  },
+  remarksList: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    paddingVertical: spacing.sm,
+  },
+  remarkItem: {
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.lg,
+    borderBottomWidth: 1,
+    borderBottomColor: '#E5E7EB',
+  },
+  remarkItemLast: {
+    borderBottomWidth: 0,
+  },
+  remarkHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    marginBottom: spacing.xs,
+  },
+  remarkAuthor: {
+    fontWeight: '600',
+    color: theme.colors.onSurface,
+  },
+  remarkRole: {
+    color: theme.colors.onSurfaceVariant,
+    fontSize: 12,
+  },
+  remarkTimestamp: {
+    color: theme.colors.onSurfaceVariant,
+    fontSize: 12,
+  },
+  remarkBody: {
+    color: theme.colors.onSurface,
+    lineHeight: 20,
+  },
+  remarkCancelButton: {
+    marginTop: spacing.xs,
+    alignSelf: 'flex-start',
+    paddingVertical: spacing.xs,
+    paddingHorizontal: spacing.sm,
+    borderRadius: 8,
+    backgroundColor: '#FEE2E2',
+  },
+  remarkCancelButtonText: {
+    color: '#B91C1C',
+    fontWeight: '600',
+    fontSize: 12,
+    letterSpacing: 0.2,
+  },
+  remarkCancelled: {
+    marginTop: spacing.xs,
+    color: theme.colors.error,
+    fontSize: 12,
+    fontStyle: 'italic',
+  },
+  remarkDivider: {
+    marginVertical: spacing.md,
+  },
+  remarkForm: {
+    gap: spacing.sm,
+  },
+  remarkInput: {
+    backgroundColor: '#FFFFFF',
+  },
+  remarkErrorText: {
+    color: theme.colors.error,
+    fontSize: 12,
+    marginLeft: 4,
+  },
+  cancelDialogDescription: {
+    marginBottom: spacing.md,
+    color: theme.colors.onSurfaceVariant,
+  },
+  cancelDialogInput: {
+    backgroundColor: '#FFFFFF',
+  },
+  remarkEmptyState: {
+    paddingVertical: spacing.md,
+    alignItems: 'center',
+  },
+  remarkEmptyText: {
+    color: theme.colors.onSurfaceVariant,
+    fontSize: 14,
   },
   errorContainer: {
     flex: 1,

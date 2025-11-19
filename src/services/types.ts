@@ -20,11 +20,20 @@ export interface PaginatedResponse<T> {
 // ========== ENQUIRY TYPES ==========
 
 export enum EnquirySource {
-  SHOWROOM = 'SHOWROOM',
+  WALK_IN = 'WALK_IN',
+  PHONE_CALL = 'PHONE_CALL',
   WEBSITE = 'WEBSITE',
-  PHONE = 'PHONE',
+  DIGITAL = 'DIGITAL',
+  SOCIAL_MEDIA = 'SOCIAL_MEDIA',
   REFERRAL = 'REFERRAL',
-  WALK_IN = 'WALK_IN'
+  ADVERTISEMENT = 'ADVERTISEMENT',
+  EMAIL = 'EMAIL',
+  SHOWROOM_VISIT = 'SHOWROOM_VISIT',
+  EVENT = 'EVENT',
+  BTL_ACTIVITY = 'BTL_ACTIVITY',
+  WHATSAPP = 'WHATSAPP',
+  OUTBOUND_CALL = 'OUTBOUND_CALL',
+  OTHER = 'OTHER'
 }
 
 export enum EnquiryCategory {
@@ -48,9 +57,15 @@ export interface CreateEnquiryRequest {
   model: string;
   variant: string;
   color?: string;
-  expectedBookingDate?: string;
+  source?: EnquirySource;
+  location?: string;
+  expectedBookingDate: string;
+  nextFollowUpDate?: string;
   caRemarks?: string;
   category?: EnquiryCategory;
+  assignedToUserId?: string;
+  dealerCode?: string;
+  dealershipId?: string;
 }
 
 export interface UpdateEnquiryRequest {
@@ -60,9 +75,14 @@ export interface UpdateEnquiryRequest {
   model?: string;
   variant?: string;
   color?: string;
+  source?: EnquirySource;
+  location?: string;
+  expectedBookingDate?: string;
+  nextFollowUpDate?: string;
   status?: EnquiryStatus;
   category?: EnquiryCategory;
   caRemarks?: string;
+  assignedToUserId?: string;
 }
 
 export interface EnquiryFilters {
@@ -73,6 +93,9 @@ export interface EnquiryFilters {
   search?: string;
   sortBy?: string;
   sortOrder?: 'asc' | 'desc';
+  dealershipId?: string;
+  dealershipCode?: string;
+  scope?: string;
 }
 
 export interface Enquiry {
@@ -83,10 +106,12 @@ export interface Enquiry {
   model: string;
   variant?: string;
   color?: string;
-  source: EnquirySource;
+  source?: EnquirySource;
   status: EnquiryStatus;
   category: EnquiryCategory;
   expectedBookingDate?: string;
+  nextFollowUpDate?: string;
+  location?: string;
   caRemarks?: string;
   dealerCode?: string;
   createdByUserId: string;
@@ -109,6 +134,7 @@ export interface Enquiry {
     bookings: number;
     quotations: number;
   };
+  remarkHistory?: RemarkHistoryEntry[];
 }
 
 export interface AutoBookingResponse {
@@ -122,6 +148,62 @@ export interface AutoBookingResponse {
       rasStock?: number;
       regionalStock?: number;
     };
+  };
+}
+
+export interface RemarkHistoryEntry {
+  id: string;
+  remark: string;
+  remarkType: string;
+  createdAt: string;
+  createdBy: {
+    id: string;
+    name: string;
+    role: {
+      id?: string;
+      name: string;
+    };
+  };
+  cancelled?: boolean;
+  cancellationReason?: string;
+  cancelledAt?: string;
+}
+
+export interface PendingRemarksSummary {
+  enquiriesPendingCount: number;
+  bookingsPendingCount: number;
+  enquiryIds: string[];
+  bookingIds: string[];
+}
+
+export interface TodayBookingPlanEnquiry {
+  id: string;
+  customerName: string;
+  model?: string;
+  variant?: string;
+  expectedBookingDate?: string;
+  nextFollowUpDate?: string;
+  location?: string;
+}
+
+export interface TodayBookingPlanBooking {
+  id: string;
+  customerName: string;
+  variant?: string;
+  expectedDeliveryDate?: string;
+  stockAvailability?: StockAvailability | string;
+  chassisNumber?: string;
+  allocationOrderNumber?: string;
+}
+
+export interface TodayBookingPlan {
+  enquiries: {
+    total: number;
+    items: TodayBookingPlanEnquiry[];
+  };
+  bookings: {
+    total: number;
+    items: TodayBookingPlanBooking[];
   };
 }
 
@@ -156,6 +238,8 @@ export interface UpdateBookingRequest {
   financerName?: string;
   stockAvailability?: StockAvailability;
   advisorRemarks?: string;
+  chassisNumber?: string;
+  allocationOrderNumber?: string;
 }
 
 export interface Booking {
@@ -182,7 +266,6 @@ export interface Booking {
   fileLoginDate?: string;
   approvalDate?: string;
   stockAvailability?: StockAvailability;
-  backOrderStatus: boolean;
   rtoDate?: string;
   advisorRemarks?: string;
   teamLeadRemarks?: string;
@@ -192,6 +275,8 @@ export interface Booking {
   dealerCode?: string;
   zone?: string;
   region?: string;
+  chassisNumber?: string;
+  allocationOrderNumber?: string;
   createdAt: string;
   updatedAt: string;
   source?: string;
@@ -250,6 +335,9 @@ export interface BookingFilters {
   search?: string;
   sortBy?: string;
   sortOrder?: 'asc' | 'desc';
+  dealershipId?: string;
+  dealershipCode?: string;
+  scope?: string;
 }
 
 export interface BulkImportResponse {

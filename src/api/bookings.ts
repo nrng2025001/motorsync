@@ -20,6 +20,9 @@ class BookingAPI {
     if (params?.search) queryParams.append('search', params.search);
     if (params?.sortBy) queryParams.append('sortBy', params.sortBy);
     if (params?.sortOrder) queryParams.append('sortOrder', params.sortOrder);
+    if (params?.dealershipId) queryParams.append('dealershipId', params.dealershipId);
+    if (params?.dealershipCode) queryParams.append('dealershipCode', params.dealershipCode);
+    if (params?.scope) queryParams.append('scope', params.scope);
 
     return apiClient.get(`/bookings?${queryParams.toString()}`);
   }
@@ -35,6 +38,9 @@ class BookingAPI {
     if (params?.limit) queryParams.append('limit', params.limit.toString());
     if (params?.status) queryParams.append('status', params.status);
     if (params?.timeline) queryParams.append('timeline', params.timeline);
+    if (params?.dealershipId) queryParams.append('dealershipId', params.dealershipId);
+    if (params?.dealershipCode) queryParams.append('dealershipCode', params.dealershipCode);
+    if (params?.scope) queryParams.append('scope', params.scope);
 
     return apiClient.get(`/bookings/advisor/my-bookings?${queryParams.toString()}`);
   }
@@ -80,13 +86,14 @@ class BookingAPI {
   region?: string;
   fileLoginDate?: string;
   approvalDate?: string;
-  backOrderStatus?: boolean;
   rtoDate?: string;
   advisorRemarks?: string;
     teamLeadRemarks?: string;
     salesManagerRemarks?: string;
     generalManagerRemarks?: string;
     adminRemarks?: string;
+  chassisNumber?: string;
+  allocationOrderNumber?: string;
   }): Promise<ApiResponse<Booking>> {
     return apiClient.put(`/bookings/${id}`, data);
   }

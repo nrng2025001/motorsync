@@ -68,6 +68,9 @@ export type {
   StockStats,
 } from './stock';
 
+// Export Dashboard API
+export { default as DashboardAPI, dashboardAPI } from './dashboard';
+
 // Export Catalog API
 export { CatalogAPI } from './catalog';
 
@@ -81,6 +84,10 @@ export type {
   FileListParams,
   FileStats,
 } from './files';
+
+// Export Remarks API
+export { default as RemarksAPI, remarksAPI } from './remarks';
+export type { PendingRemarksSummary, RemarkHistoryEntry } from '../services/types';
 
 /**
  * API Configuration

@@ -64,13 +64,28 @@ export const StatusSummaryCard: React.FC<StatusSummaryCardProps> = ({
       let response;
       
       // Use role-appropriate endpoints
+      const dealershipId = state.user?.dealership?.id || state.user?.dealershipId;
+      const dealershipCode = state.user?.dealership?.code;
+      const scope =
+        userRole === 'CUSTOMER_ADVISOR'
+          ? 'advisor'
+          : userRole === 'TEAM_LEAD'
+          ? 'team'
+          : 'dealership';
+
       if (type === 'bookings') {
         if (['ADMIN', 'GENERAL_MANAGER', 'SALES_MANAGER', 'TEAM_LEAD'].includes(userRole)) {
           // Higher roles can access status summary
           response = await bookingAPI.getBookingStatusSummary();
         } else {
           // Customer advisors use their own bookings endpoint
-          response = await bookingAPI.getMyBookings(1, 1000);
+          response = await bookingAPI.getMyBookings({
+            page: 1,
+            limit: 1000,
+            dealershipId,
+            dealershipCode,
+            scope,
+          });
           // Transform the response to match expected format
           const bookings = response.data?.bookings || [];
           const transformedData = {
@@ -105,7 +120,13 @@ export const StatusSummaryCard: React.FC<StatusSummaryCardProps> = ({
           response = await enquiryAPI.getEnquiryStatusSummary();
         } else {
           // Customer advisors use their own enquiries endpoint
-          response = await enquiryAPI.getMyEnquiries(1, 1000);
+          response = await enquiryAPI.getEnquiries({
+            page: 1,
+            limit: 1000,
+            dealershipId,
+            dealershipCode,
+            scope,
+          });
           // Transform the response to match expected format
           const enquiries = response.data?.enquiries || [];
           const transformedData = {

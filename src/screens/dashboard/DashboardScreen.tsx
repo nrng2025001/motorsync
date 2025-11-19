@@ -20,6 +20,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient as ExpoLinearGradient } from 'expo-linear-gradient';
 import Svg, { Path, Rect, Defs, LinearGradient, Stop, G, Ellipse } from 'react-native-svg';
 import DebugRoleButton from '../../components/DebugRoleButton';
+import { formatDate } from '../../utils/formatting';
 
 const { width, height } = Dimensions.get('window');
 
@@ -53,8 +54,21 @@ import { getUserRole } from '../../utils/roleUtils';
 import { useTeam, canManageTeam } from '../../context/TeamContext';
 import { DashboardCard } from '../../components/DashboardCard';
 import { theme, spacing, shadows, borderRadius } from '../../utils/theme';
-import { enquiryAPI, bookingAPI, QuotationsAPI, StockAPI } from '../../api';
+import {
+  enquiryAPI,
+  bookingAPI,
+  QuotationsAPI,
+  StockAPI,
+  remarksAPI,
+  dashboardAPI,
+} from '../../api';
 import { getMyBookings } from '../../services/booking.service';
+import { PendingRemarksSummary, TodayBookingPlan } from '../../services/types';
+
+const isLikelyUuid = (id?: string | null) =>
+  !!id &&
+  typeof id === 'string' &&
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id);
 
 /**
  * Dashboard data interface
@@ -146,6 +160,46 @@ export function DashboardScreen({ navigation }: any): React.JSX.Element {
     data: null,
   });
   const [refreshing, setRefreshing] = useState(false);
+  const [pendingSummary, setPendingSummary] = useState<PendingRemarksSummary | null>(null);
+  const [bookingPlan, setBookingPlan] = useState<TodayBookingPlan | null>(null);
+
+  const normalizeBookingPlan = useCallback(
+    (plan: any): TodayBookingPlan | null => {
+      if (!plan) {
+        return null;
+      }
+
+      const extractItems = (segment: any) => {
+        if (!segment) return [];
+        if (Array.isArray(segment.items)) return segment.items;
+        if (Array.isArray(segment.records)) return segment.records;
+        if (Array.isArray(segment)) return segment;
+        return [];
+      };
+
+      const enquiriesItems = extractItems(plan.enquiries);
+      const bookingsItems = extractItems(plan.bookings);
+
+      const extractTotal = (segment: any, fallback: number) => {
+        if (segment && typeof segment.total === 'number') {
+          return segment.total;
+        }
+        return fallback;
+      };
+
+      return {
+        enquiries: {
+          total: extractTotal(plan.enquiries, enquiriesItems.length),
+          items: enquiriesItems,
+        },
+        bookings: {
+          total: extractTotal(plan.bookings, bookingsItems.length),
+          items: bookingsItems,
+        },
+      };
+    },
+    []
+  );
 
   const userRole = getUserRole(state.user);
   const userName = state.user?.name || 'User';
@@ -170,6 +224,45 @@ export function DashboardScreen({ navigation }: any): React.JSX.Element {
   const fetchDashboardData = useCallback(async () => {
     try {
       setDashboardState(prev => ({ ...prev, loading: true, error: null }));
+      const dealershipId = state.user?.dealership?.id || state.user?.dealershipId;
+      const dealershipCode = state.user?.dealership?.code;
+
+      if (!dealershipId || !dealershipCode || !isLikelyUuid(dealershipId)) {
+        console.warn('[Dashboard] Waiting for valid dealership context before fetching data', {
+          dealershipId,
+          dealershipCode,
+        });
+        setDashboardState(prev => ({ ...prev, loading: false }));
+        return;
+      }
+
+      const scope =
+        userRole === 'CUSTOMER_ADVISOR'
+          ? 'advisor'
+          : userRole === 'TEAM_LEAD'
+          ? 'team'
+          : 'dealership';
+
+      const pendingSummaryPromise = remarksAPI
+        .getPendingSummary({
+          dealershipId,
+          dealershipCode,
+          scope,
+        })
+        .catch((err) => {
+          console.error('Error fetching pending remarks summary:', err);
+          return null;
+        });
+      const bookingPlanPromise = dashboardAPI
+        .getTodayBookingPlan({
+          dealershipId,
+          dealershipCode,
+          scope,
+        })
+        .catch((err) => {
+          console.error('Error fetching today booking plan:', err);
+          return null;
+        });
       
       // Initialize safe defaults
       let enquiries: any[] = [];
@@ -181,8 +274,14 @@ export function DashboardScreen({ navigation }: any): React.JSX.Element {
       console.log('🔑 Dashboard - User Role:', userRole);
       
       const [enquiriesResponse, bookingsData] = await Promise.all([
-        enquiryAPI.getEnquiries({ page: 1, limit: 1000 }), // Get all enquiries (will be filtered by user)
-        getMyBookings(undefined, undefined, userRole, currentUserId), // Get advisor's assigned bookings
+        enquiryAPI.getEnquiries({
+          page: 1,
+          limit: 1000,
+          dealershipId,
+          dealershipCode,
+          scope,
+        }), // Get all enquiries (will be filtered by user)
+        getMyBookings(undefined, undefined, userRole, currentUserId, { dealershipId, dealershipCode, scope }), // Get advisor's assigned bookings
       ]);
       
       // Extract data from responses - handle nested data structure
@@ -283,6 +382,12 @@ export function DashboardScreen({ navigation }: any): React.JSX.Element {
         error: null,
         data: dashboardData,
       });
+
+      const pendingData = await pendingSummaryPromise;
+      setPendingSummary(pendingData);
+
+      const bookingPlanData = await bookingPlanPromise;
+      setBookingPlan(normalizeBookingPlan(bookingPlanData));
     } catch (error: any) {
       console.error('Error fetching dashboard data:', error);
       setDashboardState({
@@ -290,6 +395,8 @@ export function DashboardScreen({ navigation }: any): React.JSX.Element {
         error: error.message || 'Failed to load dashboard data',
         data: getEmptyDashboardData(),
       });
+      setPendingSummary(null);
+      setBookingPlan(null);
     }
   }, [userRole]);
 
@@ -301,6 +408,46 @@ export function DashboardScreen({ navigation }: any): React.JSX.Element {
     await fetchDashboardData();
     setRefreshing(false);
   }, [fetchDashboardData]);
+
+  const handlePendingUpdatesPress = useCallback(() => {
+    if (!pendingSummary) {
+      return;
+    }
+
+    const enquiryIds = pendingSummary.enquiryIds || [];
+    const bookingIds = pendingSummary.bookingIds || [];
+
+    if (enquiryIds.length > 0 && bookingIds.length > 0) {
+      Alert.alert(
+        'Pending Updates',
+        'Choose which records you want to review first.',
+        [
+          {
+            text: 'Enquiries',
+            onPress: () => navigation.navigate('Enquiries', { pendingIds: enquiryIds }),
+          },
+          {
+            text: 'Bookings',
+            onPress: () => navigation.navigate('Bookings', { pendingIds: bookingIds }),
+          },
+          {
+            text: 'Cancel',
+            style: 'cancel',
+          },
+        ]
+      );
+      return;
+    }
+
+    if (enquiryIds.length > 0) {
+      navigation.navigate('Enquiries', { pendingIds: enquiryIds });
+      return;
+    }
+
+    if (bookingIds.length > 0) {
+      navigation.navigate('Bookings', { pendingIds: bookingIds });
+    }
+  }, [navigation, pendingSummary]);
 
   /**
    * Load data on component mount
@@ -358,6 +505,16 @@ export function DashboardScreen({ navigation }: any): React.JSX.Element {
   }
 
   const dashboardData = dashboardState.data || getEmptyDashboardData();
+  const pendingUpdatesCount =
+    (pendingSummary?.enquiriesPendingCount || 0) +
+    (pendingSummary?.bookingsPendingCount || 0);
+  const hasPendingUpdates = pendingUpdatesCount > 0;
+  const bookingPlanEnquiries = bookingPlan?.enquiries?.items ?? [];
+  const bookingPlanBookings = bookingPlan?.bookings?.items ?? [];
+  const bookingPlanEnquiriesTotal =
+    bookingPlan?.enquiries?.total ?? bookingPlanEnquiries.length;
+  const bookingPlanBookingsTotal =
+    bookingPlan?.bookings?.total ?? bookingPlanBookings.length;
 
   return (
     <View style={styles.container}>
@@ -409,6 +566,26 @@ export function DashboardScreen({ navigation }: any): React.JSX.Element {
             </View>
           </View>
         </View>
+
+        {/* Pending Updates Banner */}
+        {hasPendingUpdates && (
+          <TouchableOpacity
+            style={styles.pendingUpdatesBanner}
+            onPress={handlePendingUpdatesPress}
+            activeOpacity={0.85}
+          >
+            <View style={styles.pendingUpdatesTextWrapper}>
+              <Text style={styles.pendingUpdatesTitle}>Pending Updates</Text>
+              <Text style={styles.pendingUpdatesSubtitle}>
+                {pendingSummary?.enquiriesPendingCount || 0} enquiries ·{' '}
+                {pendingSummary?.bookingsPendingCount || 0} bookings
+              </Text>
+            </View>
+            <View style={styles.pendingUpdatesBadge}>
+              <Text style={styles.pendingUpdatesBadgeText}>{pendingUpdatesCount}</Text>
+            </View>
+          </TouchableOpacity>
+        )}
 
         {/* Enquiries Overview Section */}
         <View style={styles.section}>
@@ -473,7 +650,7 @@ export function DashboardScreen({ navigation }: any): React.JSX.Element {
                 <Icon source="clock" size={24} color="#F59E0B" />
               </View>
               <Text style={[styles.summaryCount, { color: '#F59E0B' }]}>
-                0
+                {pendingSummary?.enquiriesPendingCount || 0}
               </Text>
               <Text style={styles.summaryLabel}>
                 Pending Update
@@ -601,6 +778,127 @@ export function DashboardScreen({ navigation }: any): React.JSX.Element {
               </Text>
             </View>
           </View>
+        </View>
+        {/* Today's Booking Plan */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>
+            Today's Booking Plan
+          </Text>
+          <Text style={styles.sectionSubtitle}>
+            Stay ahead of today's deliveries and follow-ups
+          </Text>
+
+          <View style={styles.bookingPlanSummaryRow}>
+            <View style={[styles.bookingPlanSummaryCard, styles.bookingPlanSummaryCardEnquiry]}>
+              <View>
+                <Text style={styles.bookingPlanSummaryLabel}>Enquiries Today</Text>
+                <Text style={styles.bookingPlanSummaryCount}>{bookingPlanEnquiriesTotal}</Text>
+              </View>
+            </View>
+            <View style={[styles.bookingPlanSummaryCard, styles.bookingPlanSummaryCardBooking]}>
+              <View>
+                <Text style={styles.bookingPlanSummaryLabel}>Bookings Today</Text>
+                <Text style={styles.bookingPlanSummaryCount}>{bookingPlanBookingsTotal}</Text>
+              </View>
+            </View>
+          </View>
+
+          {bookingPlanEnquiries.length === 0 && bookingPlanBookings.length === 0 ? (
+            <View style={styles.bookingPlanEmptyState}>
+              <Icon source="calendar-check" size={24} color="#64748B" />
+              <Text style={styles.bookingPlanEmptyText}>No planned follow-ups or deliveries today.</Text>
+            </View>
+          ) : (
+            <>
+              {bookingPlanEnquiries.length > 0 && (
+                <View style={styles.bookingPlanList}>
+                  <Text style={styles.bookingPlanListTitle}>Enquiries</Text>
+                  {bookingPlanEnquiries.map((item: any) => (
+                    <TouchableOpacity
+                      key={item.id}
+                      style={styles.bookingPlanItem}
+                      onPress={() => navigation.navigate('EnquiryDetails', { enquiryId: item.id })}
+                      activeOpacity={0.8}
+                    >
+                      <View style={styles.bookingPlanItemHeader}>
+                        <Text style={styles.bookingPlanCustomer}>{item.customerName}</Text>
+                        {item.expectedBookingDate && (
+                          <Text style={styles.bookingPlanBadge}>
+                            {formatDate(item.expectedBookingDate, { day: '2-digit', month: 'short' })}
+                          </Text>
+                        )}
+                      </View>
+                      <View style={styles.bookingPlanMeta}>
+                        {item.model && (
+                          <Text style={styles.bookingPlanMetaText}>
+                            {item.model}
+                            {item.variant ? ` · ${item.variant}` : ''}
+                          </Text>
+                        )}
+                        {item.location && (
+                          <Text style={styles.bookingPlanMetaText}>📍 {item.location}</Text>
+                        )}
+                        {item.nextFollowUpDate && (
+                          <Text style={styles.bookingPlanMetaText}>
+                            Next follow-up: {formatDate(item.nextFollowUpDate, { day: '2-digit', month: 'short' })}
+                          </Text>
+                        )}
+                      </View>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              )}
+
+              {bookingPlanBookings.length > 0 && (
+                <View style={styles.bookingPlanList}>
+                  <Text style={styles.bookingPlanListTitle}>Bookings</Text>
+                  {bookingPlanBookings.map((item: any) => {
+                    const isInStock =
+                      (item.stockAvailability || '').toUpperCase() === 'VEHICLE_AVAILABLE';
+                    const allocationLabel = isInStock
+                      ? item.chassisNumber
+                        ? `Chassis: ${item.chassisNumber}`
+                        : 'Chassis number pending'
+                      : item.allocationOrderNumber
+                        ? `Order: ${item.allocationOrderNumber}`
+                        : 'Order number pending';
+
+                    return (
+                      <TouchableOpacity
+                        key={item.id}
+                        style={styles.bookingPlanItem}
+                        onPress={() => navigation.navigate('BookingDetails', { bookingId: item.id })}
+                        activeOpacity={0.8}
+                      >
+                        <View style={styles.bookingPlanItemHeader}>
+                          <Text style={styles.bookingPlanCustomer}>{item.customerName}</Text>
+                          {item.expectedDeliveryDate && (
+                            <Text style={styles.bookingPlanBadge}>
+                              {formatDate(item.expectedDeliveryDate, { day: '2-digit', month: 'short' })}
+                            </Text>
+                          )}
+                        </View>
+                        <View style={styles.bookingPlanMeta}>
+                          {item.variant && (
+                            <Text style={styles.bookingPlanMetaText}>{item.variant}</Text>
+                          )}
+                          <Text
+                            style={[
+                              styles.bookingPlanMetaText,
+                              isInStock ? styles.bookingPlanInStock : styles.bookingPlanOutOfStock,
+                            ]}
+                          >
+                            {isInStock ? 'In Stock' : 'Awaiting Allocation'}
+                          </Text>
+                          <Text style={styles.bookingPlanMetaText}>{allocationLabel}</Text>
+                        </View>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+              )}
+            </>
+          )}
         </View>
 
         {/* Stock Section */}
@@ -1465,6 +1763,143 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#64748B',
     textAlign: 'center',
+  },
+  pendingUpdatesBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.lg,
+    backgroundColor: '#FEF3C7',
+    borderRadius: 16,
+    marginBottom: spacing.xl,
+    borderWidth: 1,
+    borderColor: '#FCD34D',
+  },
+  pendingUpdatesTextWrapper: {
+    flex: 1,
+    marginRight: spacing.md,
+  },
+  pendingUpdatesTitle: {
+    fontWeight: '700',
+    fontSize: 16,
+    color: '#92400E',
+  },
+  pendingUpdatesSubtitle: {
+    color: '#B45309',
+    marginTop: spacing.xs,
+  },
+  pendingUpdatesBadge: {
+    minWidth: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#F97316',
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: spacing.sm,
+  },
+  pendingUpdatesBadgeText: {
+    color: '#FFFFFF',
+    fontWeight: '700',
+    fontSize: 16,
+  },
+  bookingPlanSummaryRow: {
+    flexDirection: 'row',
+    gap: spacing.md,
+    marginTop: spacing.md,
+    marginBottom: spacing.md,
+  },
+  bookingPlanSummaryCard: {
+    flex: 1,
+    borderRadius: 14,
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.lg,
+  },
+  bookingPlanSummaryCardEnquiry: {
+    backgroundColor: '#E0F2FE',
+  },
+  bookingPlanSummaryCardBooking: {
+    backgroundColor: '#DCFCE7',
+  },
+  bookingPlanSummaryLabel: {
+    color: '#0F172A',
+    fontWeight: '600',
+    marginBottom: spacing.xs,
+  },
+  bookingPlanSummaryCount: {
+    fontSize: 28,
+    fontWeight: '800',
+    color: '#0F172A',
+  },
+  bookingPlanEmptyState: {
+    marginTop: spacing.md,
+    padding: spacing.lg,
+    borderRadius: 12,
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    alignItems: 'center',
+    gap: spacing.sm,
+  },
+  bookingPlanEmptyText: {
+    color: '#64748B',
+    textAlign: 'center',
+  },
+  bookingPlanList: {
+    marginTop: spacing.lg,
+    gap: spacing.sm,
+  },
+  bookingPlanListTitle: {
+    fontWeight: '700',
+    color: '#0F172A',
+    marginBottom: spacing.xs,
+  },
+  bookingPlanItem: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    padding: spacing.md,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    shadowColor: '#000',
+    shadowOpacity: 0.05,
+    shadowOffset: { width: 0, height: 2 },
+    shadowRadius: 4,
+    elevation: 1,
+    gap: spacing.sm,
+  },
+  bookingPlanItemHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  bookingPlanCustomer: {
+    fontWeight: '700',
+    color: '#0F172A',
+    fontSize: 16,
+  },
+  bookingPlanBadge: {
+    backgroundColor: '#1D4ED8',
+    color: '#FFFFFF',
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs,
+    borderRadius: 999,
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  bookingPlanMeta: {
+    gap: 4,
+  },
+  bookingPlanMetaText: {
+    color: '#475569',
+    fontSize: 13,
+  },
+  bookingPlanInStock: {
+    color: '#0F766E',
+    fontWeight: '600',
+  },
+  bookingPlanOutOfStock: {
+    color: '#B91C1C',
+    fontWeight: '600',
   },
   bookingsHeader: {
     flexDirection: 'row',

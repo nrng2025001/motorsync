@@ -7,6 +7,7 @@ import React from 'react';
 import { View, StyleSheet, TouchableOpacity } from 'react-native';
 import { Card, Text, Chip, IconButton, Button } from 'react-native-paper';
 import { Enquiry, EnquiryCategory } from '../services/types';
+import { formatEnquirySource } from '../utils/formatting';
 
 interface EnquiryCardProps {
   enquiry: Enquiry;
@@ -122,8 +123,16 @@ export function EnquiryCard({
           )}
           <View style={styles.detailRow}>
             <Text style={styles.detailIcon}>🔗</Text>
-            <Text style={styles.detailText}>Source: {enquiry.source}</Text>
+            <Text style={styles.detailText}>
+              Source: {formatEnquirySource(enquiry.source)}
+            </Text>
           </View>
+          {enquiry.location && (
+            <View style={styles.detailRow}>
+              <Text style={styles.detailIcon}>📍</Text>
+              <Text style={styles.detailText}>Location: {enquiry.location}</Text>
+            </View>
+          )}
           {showCreatorInfo && enquiry.createdBy && (
             <View style={styles.detailRow}>
               <Text style={styles.detailIcon}>👤</Text>

@@ -3,7 +3,7 @@
  * Displays bookings filtered by status categories
  */
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   View,
   StyleSheet,
@@ -21,7 +21,7 @@ import {
   Snackbar,
 } from 'react-native-paper';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useRoute } from '@react-navigation/native';
 import { StackNavigationProp } from '@react-navigation/stack';
 import { LinearGradient as ExpoLinearGradient } from 'expo-linear-gradient';
 import Svg, { Path, Rect, Defs, LinearGradient, Stop, G, Ellipse, Circle } from 'react-native-svg';
@@ -39,6 +39,11 @@ import { getDataFilterOptions, canSeeUserData, getRoleDisplayNameWithHierarchy, 
 const { width, height } = Dimensions.get('window');
 
 type NavigationProp = StackNavigationProp<MainStackParamList>;
+
+const isLikelyUuid = (id?: string | null) =>
+  !!id &&
+  typeof id === 'string' &&
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id);
 
 /**
  * Enhanced Background Pattern with Animated Elements
@@ -95,6 +100,7 @@ type StatusFilter = 'all' | 'pending' | 'retailed' | 'cancelled';
 
 export function BookingsScreen(): React.JSX.Element {
   const navigation = useNavigation<NavigationProp>();
+  const route = useRoute<any>();
   const { state: authState } = useAuth();
 
   // Get user role and hierarchical permissions
@@ -108,6 +114,17 @@ export function BookingsScreen(): React.JSX.Element {
   const [refreshing, setRefreshing] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [snackbar, setSnackbar] = useState({ visible: false, message: '' });
+  const [pendingFilterIds, setPendingFilterIds] = useState<string[] | null>(null);
+
+  const pendingIdsSet = useMemo(() => {
+    return pendingFilterIds ? new Set(pendingFilterIds) : null;
+  }, [pendingFilterIds]);
+
+  const pendingFilterActive = !!(pendingIdsSet && pendingIdsSet.size > 0);
+
+  const clearPendingFilter = useCallback(() => {
+    setPendingFilterIds(null);
+  }, []);
 
   // Fetch bookings by timeline
   const fetchBookings = useCallback(async (showLoading = true) => {
@@ -115,7 +132,29 @@ export function BookingsScreen(): React.JSX.Element {
       if (showLoading) setLoading(true);
       
       const currentUserId = authState.user?.firebaseUid || authState.user?.id;
-      const response = await BookingService.getMyBookings(undefined, undefined, userRole, currentUserId);
+      const dealershipId = authState.user?.dealership?.id || authState.user?.dealershipId;
+      const dealershipCode = authState.user?.dealership?.code;
+
+      if (!dealershipId || !dealershipCode || !isLikelyUuid(dealershipId)) {
+        console.warn('[BookingsScreen] Waiting for valid dealership context before fetching', {
+          dealershipId,
+          dealershipCode,
+        });
+        setLoading(false);
+        setRefreshing(false);
+        return;
+      }
+      const scope =
+        userRole === 'CUSTOMER_ADVISOR'
+          ? 'advisor'
+          : userRole === 'TEAM_LEAD'
+          ? 'team'
+          : 'dealership';
+      const response = await BookingService.getMyBookings(undefined, undefined, userRole, currentUserId, {
+        dealershipId,
+        dealershipCode,
+        scope,
+      });
       
       // Ensure we have a valid bookings array
       let bookingsArray = response.bookings || [];
@@ -147,6 +186,30 @@ export function BookingsScreen(): React.JSX.Element {
       setRefreshing(false);
     }
   }, [authState.user?.role, authState.user?.firebaseUid, authState.user?.id, userRole]);
+
+  useEffect(() => {
+    if (route.params?.pendingIds) {
+      const idsParam = route.params.pendingIds;
+      const ids = Array.isArray(idsParam) ? idsParam : [idsParam];
+      const cleanedIds = ids.filter(Boolean);
+      if (cleanedIds.length > 0) {
+        setPendingFilterIds(cleanedIds);
+        setSelectedStatus('all');
+        setSearchQuery('');
+      }
+      navigation.setParams({ pendingIds: undefined });
+    }
+  }, [route.params?.pendingIds, navigation]);
+
+  useEffect(() => {
+    if (route.params?.initialFilter) {
+      const filterParam = route.params.initialFilter;
+      if (['all', 'pending', 'retailed', 'cancelled'].includes(filterParam)) {
+        setSelectedStatus(filterParam as StatusFilter);
+      }
+      navigation.setParams({ initialFilter: undefined });
+    }
+  }, [route.params?.initialFilter, navigation]);
 
   // Initial load and timeline change
   useEffect(() => {
@@ -180,6 +243,10 @@ export function BookingsScreen(): React.JSX.Element {
         booking.variant.toLowerCase().includes(query)
       );
       if (!matchesSearch) return false;
+    }
+
+    if (pendingIdsSet && pendingIdsSet.size > 0 && !pendingIdsSet.has(booking.id)) {
+      return false;
     }
 
     // Status filter

@@ -19,6 +19,13 @@ export interface DashboardStats {
   lowStockVehicles: number;
 }
 
+export interface BookingPlanTodaySummary {
+  enquiries: any[];
+  bookings: any[];
+  totalEnquiries?: number;
+  totalBookings?: number;
+}
+
 class DashboardAPI {
   static async getDashboardStats(): Promise<DashboardStats> {
     return handleApiCall(() =>
@@ -49,6 +56,14 @@ class DashboardAPI {
   }> {
     return handleApiCall(() =>
       apiClient.get<ApiResponse<any>>('/dashboard/sales-performance', {
+        params,
+      })
+    );
+  }
+
+  static async getTodayBookingPlan(params?: { dealershipId?: string; dealershipCode?: string }): Promise<BookingPlanTodaySummary> {
+    return handleApiCall(() =>
+      apiClient.get<ApiResponse<BookingPlanTodaySummary>>('/dashboard/booking-plan/today', {
         params,
       })
     );

@@ -3,7 +3,7 @@
  * Create new enquiry with backend-compatible validation
  */
 
-import React, { useState } from 'react';
+import React, { useMemo, useState, useCallback } from 'react';
 import {
   View,
   StyleSheet,
@@ -16,7 +16,6 @@ import {
   TextInput,
   Card,
   Menu,
-  Divider,
   ActivityIndicator,
 } from 'react-native-paper';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -25,9 +24,13 @@ import { StackNavigationProp } from '@react-navigation/stack';
 
 import { DatePickerISO } from '../../components/DatePickerISO';
 import * as EnquiryService from '../../services/enquiry.service';
-import { CreateEnquiryRequest, EnquiryCategory } from '../../services/types';
+import { CreateEnquiryRequest, EnquiryCategory, EnquirySource } from '../../services/types';
 import { MainStackParamList } from '../../navigation/MainNavigator';
 import { enquiryAPI } from '../../api/enquiries';
+import { useAuth } from '../../context/AuthContext';
+import { getUserRole } from '../../utils/roleUtils';
+import { formatDateForAPI } from '../../services/api.config';
+import { formatEnquirySource } from '../../utils/formatting';
 
 type NavigationProp = StackNavigationProp<MainStackParamList>;
 
@@ -179,8 +182,23 @@ const HARDCODED_COLORS = [
   'Metallic Green'
 ];
 
+const DEFAULT_SOURCE_OPTIONS = Object.values(EnquirySource).map((value) => ({
+  value,
+  label: formatEnquirySource(value),
+}));
+
 export function NewEnquiryScreen(): React.JSX.Element {
   const navigation = useNavigation<NavigationProp>();
+  const { state: authState } = useAuth();
+  const userRole = getUserRole(authState.user);
+
+  const todayISO = useMemo(() => formatDateForAPI(new Date()), []);
+  const toDateOnly = useCallback((value?: string | null) => {
+    if (!value) return undefined;
+    const parsed = new Date(value);
+    if (Number.isNaN(parsed.getTime())) return undefined;
+    return parsed.toISOString().split('T')[0];
+  }, []);
 
   // Form state
   const [formData, setFormData] = useState({
@@ -190,7 +208,10 @@ export function NewEnquiryScreen(): React.JSX.Element {
     model: '',
     variant: '',
     color: '',
-    expectedBookingDate: '',
+    source: EnquirySource.SHOWROOM_VISIT,
+    location: '',
+    expectedBookingDate: todayISO,
+    nextFollowUpDate: todayISO,
     caRemarks: '',
   });
 
@@ -199,6 +220,7 @@ export function NewEnquiryScreen(): React.JSX.Element {
   const [modelMenuVisible, setModelMenuVisible] = useState(false);
   const [variantMenuVisible, setVariantMenuVisible] = useState(false);
   const [colorMenuVisible, setColorMenuVisible] = useState(false);
+  const [sourceMenuVisible, setSourceMenuVisible] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
   
   // Data state
@@ -206,6 +228,8 @@ export function NewEnquiryScreen(): React.JSX.Element {
   const [variants, setVariants] = useState<string[]>([]);
   const [loadingModels, setLoadingModels] = useState(false);
   const [loadingVariants, setLoadingVariants] = useState(false);
+  const [availableSources, setAvailableSources] = useState(DEFAULT_SOURCE_OPTIONS);
+  const [loadingSources, setLoadingSources] = useState(false);
   const [manualVariant, setManualVariant] = useState('');
   const [useManualVariant, setUseManualVariant] = useState(false);
   const [selectedModel, setSelectedModel] = useState<string | null>(null);
@@ -272,9 +296,37 @@ export function NewEnquiryScreen(): React.JSX.Element {
   };
 
 
+  const fetchSources = async () => {
+    try {
+      setLoadingSources(true);
+      const response = await enquiryAPI.getSources();
+      if (Array.isArray(response) && response.length > 0) {
+        const options = response.map((value) => ({
+          value: value as EnquirySource,
+          label: formatEnquirySource(value),
+        }));
+        setAvailableSources(options);
+        setFormData((prev) => {
+          if (options.find((option) => option.value === prev.source)) {
+            return prev;
+          }
+          const fallback = options[0]?.value ?? prev.source;
+          return { ...prev, source: fallback };
+        });
+        return;
+      }
+    } catch (error) {
+      console.error('❌ Error fetching sources, using fallback options:', error);
+    } finally {
+      setLoadingSources(false);
+    }
+  };
+
+
   // Load models on component mount
   React.useEffect(() => {
     fetchModels();
+    fetchSources();
   }, []);
 
   // Validation
@@ -307,6 +359,30 @@ export function NewEnquiryScreen(): React.JSX.Element {
       newErrors.manualVariant = 'Please enter a variant name';
     }
 
+    if (!formData.source) {
+      newErrors.source = 'Source is required';
+    }
+
+    if (!formData.expectedBookingDate) {
+      newErrors.expectedBookingDate = 'Expected booking date is required';
+    } else {
+      const selectedDate = new Date(formData.expectedBookingDate);
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      if (selectedDate < today) {
+        newErrors.expectedBookingDate = 'Expected booking date cannot be in the past';
+      }
+    }
+
+    if (formData.nextFollowUpDate) {
+      const selectedFollowUp = new Date(formData.nextFollowUpDate);
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      if (selectedFollowUp < today) {
+        newErrors.nextFollowUpDate = 'Next follow-up date cannot be in the past';
+      }
+    }
+
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
@@ -329,18 +405,42 @@ export function NewEnquiryScreen(): React.JSX.Element {
         customerContact: formData.customerContact!,
         variant: finalVariant || '',
         model: formData.model || '',
+        source: formData.source,
+        expectedBookingDate: toDateOnly(formData.expectedBookingDate) || toDateOnly(todayISO)!,
         category: EnquiryCategory.HOT, // Set default category to HOT
       };
 
       // Add optional fields if provided
       if (formData.customerEmail) requestData.customerEmail = formData.customerEmail;
       if (formData.color) requestData.color = formData.color;
-      if (formData.expectedBookingDate) {
-        // Format date as YYYY-MM-DD for backend
-        const date = new Date(formData.expectedBookingDate);
-        requestData.expectedBookingDate = date.toISOString().split('T')[0];
-      }
+      if (formData.location?.trim()) requestData.location = formData.location.trim();
+      if (formData.nextFollowUpDate) requestData.nextFollowUpDate = toDateOnly(formData.nextFollowUpDate);
       if (formData.caRemarks) requestData.caRemarks = formData.caRemarks;
+
+      const currentUserId =
+        (authState.user as any)?.firebaseUid ||
+        (authState.user as any)?.user?.firebaseUid ||
+        authState.user?.firebaseUid ||
+        authState.user?.id ||
+        undefined;
+
+      const hasDealershipContext = Boolean(authState.user?.dealership?.id || authState.user?.dealershipId);
+      const dealerCode =
+        (authState.user?.dealership as any)?.code ||
+        (authState.user as any)?.dealershipCode ||
+        undefined;
+      const dealershipId = authState.user?.dealership?.id || authState.user?.dealershipId || undefined;
+
+      if (dealerCode) {
+        requestData.dealerCode = dealerCode;
+      }
+      if (dealershipId) {
+        requestData.dealershipId = dealershipId;
+      }
+
+      if (userRole === 'CUSTOMER_ADVISOR' && currentUserId && hasDealershipContext) {
+        requestData.assignedToUserId = currentUserId;
+      }
 
       // Debug logging
       console.log('📤 [NewEnquiryScreen] Creating enquiry with data:', JSON.stringify(requestData, null, 2));
@@ -484,6 +584,47 @@ export function NewEnquiryScreen(): React.JSX.Element {
     </Menu>
   );
 
+  const renderSourceMenu = () => (
+    <Menu
+      visible={sourceMenuVisible}
+      onDismiss={() => setSourceMenuVisible(false)}
+      anchor={
+        <TextInput
+          label="Source *"
+          value={availableSources.find(option => option.value === formData.source)?.label || ''}
+          editable={false}
+          mode="outlined"
+          right={
+            loadingSources ? (
+              <ActivityIndicator style={{ marginTop: 14, marginRight: 12 }} size="small" color="#666" />
+            ) : (
+              <TextInput.Icon
+                icon="chevron-down"
+                onPress={() => setSourceMenuVisible(true)}
+              />
+            )
+          }
+          onPressIn={() => setSourceMenuVisible(true)}
+          error={!!errors.source}
+          style={styles.input}
+          placeholder="Select enquiry source"
+        />
+      }
+    >
+      {availableSources.map(option => (
+        <Menu.Item
+          key={option.value}
+          onPress={() => {
+            setFormData({ ...formData, source: option.value });
+            setSourceMenuVisible(false);
+            if (errors.source) setErrors({ ...errors, source: '' });
+          }}
+          title={option.label}
+        />
+      ))}
+    </Menu>
+  );
+
   return (
     <SafeAreaView style={styles.container} edges={['bottom']}>
       <ScrollView
@@ -532,7 +673,7 @@ export function NewEnquiryScreen(): React.JSX.Element {
             )}
 
             <TextInput
-              label="Email (Optional)"
+              label="Email"
               value={formData.customerEmail}
               onChangeText={(text) => {
                 setFormData({ ...formData, customerEmail: text });
@@ -547,6 +688,21 @@ export function NewEnquiryScreen(): React.JSX.Element {
             />
             {errors.customerEmail && (
               <Text style={styles.errorText}>{errors.customerEmail}</Text>
+            )}
+
+            <TextInput
+              label="Location"
+              value={formData.location}
+              onChangeText={(text) => {
+                setFormData({ ...formData, location: text });
+                if (errors.location) setErrors({ ...errors, location: '' });
+              }}
+              mode="outlined"
+              style={styles.input}
+              left={<TextInput.Icon icon="map-marker" />}
+            />
+            {errors.location && (
+              <Text style={styles.errorText}>{errors.location}</Text>
             )}
           </Card.Content>
         </Card>
@@ -645,14 +801,36 @@ export function NewEnquiryScreen(): React.JSX.Element {
               Additional Details
             </Text>
 
+            {renderSourceMenu()}
+            {errors.source && <Text style={styles.errorText}>{errors.source}</Text>}
 
             <DatePickerISO
-              label="Expected Booking Date (Optional)"
+              label="Expected Booking Date *"
               value={formData.expectedBookingDate}
-              onChange={(date) => setFormData({ ...formData, expectedBookingDate: date })}
+              onChange={(date) => {
+                setFormData({ ...formData, expectedBookingDate: date });
+                if (errors.expectedBookingDate) {
+                  setErrors({ ...errors, expectedBookingDate: '' });
+                }
+              }}
               minimumDate={new Date()}
+              error={errors.expectedBookingDate}
             />
+            {errors.expectedBookingDate && <Text style={styles.errorText}>{errors.expectedBookingDate}</Text>}
 
+            <DatePickerISO
+              label="Next Follow-up Date"
+              value={formData.nextFollowUpDate}
+              onChange={(date) => {
+                setFormData({ ...formData, nextFollowUpDate: date });
+                if (errors.nextFollowUpDate) {
+                  setErrors({ ...errors, nextFollowUpDate: '' });
+                }
+              }}
+              minimumDate={new Date()}
+              error={errors.nextFollowUpDate}
+            />
+            {errors.nextFollowUpDate && <Text style={styles.errorText}>{errors.nextFollowUpDate}</Text>}
 
             <TextInput
               label="Remarks (Optional)"

@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useReducer, useEffect } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { AuthAPI } from '../api/auth';
+import { DealershipAPI } from '../api/dealerships';
 import { AuthService } from '../services/authService';
 import { User as FirebaseUser } from 'firebase/auth';
 import { Dealership } from '../types/dealership';
@@ -145,6 +146,66 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 /**
  * Transform user profile to ensure it has the correct structure
  */
+function isLikelyUuid(id: string | null | undefined): boolean {
+  if (!id || typeof id !== 'string') return false;
+  // UUID v4/v5 style
+  if (/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id)) {
+    return true;
+  }
+  // Fallback: allow other UUID-like strings (with hyphen) longer than 20 chars
+  if (id.includes('-') && id.length >= 20) {
+    return true;
+  }
+  return false;
+}
+
+function normalizeDealershipEntry(entry: any) {
+  if (!entry) {
+    return null;
+  }
+
+  const dealershipInfo =
+    entry.dealership ||
+    entry.dealershipInfo ||
+    entry.dealershipDetails ||
+    entry.detail ||
+    entry.entity ||
+    entry.profile ||
+    entry;
+
+  if (!dealershipInfo || typeof dealershipInfo !== 'object') {
+    return null;
+  }
+
+  return {
+    dealership: dealershipInfo,
+    dealershipId:
+      entry.dealershipId ||
+      dealershipInfo.id ||
+      entry.id ||
+      null,
+    dealershipCode:
+    entry.dealershipCode ||
+      dealershipInfo.code ||
+      null,
+    isPrimary:
+      entry.isPrimary ||
+      entry.primary ||
+      entry.isDefault ||
+      entry.default ||
+      entry.isActive ||
+      dealershipInfo.isPrimary ||
+      dealershipInfo.isDefault ||
+      false,
+    employeeId:
+      entry.employeeId ||
+      entry.employeeCode ||
+      entry.id ||
+      null,
+    role: entry.role || null,
+  };
+}
+
 function transformUserProfile(userProfile: any): User {
   if (!userProfile || typeof userProfile !== 'object') {
     throw new Error('Invalid user profile: not an object');
@@ -178,12 +239,136 @@ function transformUserProfile(userProfile: any): User {
     transformedProfile.firebaseUid = actualUserProfile.id;
   }
   
-  // Ensure employeeId and dealership are properly extracted
   if (actualUserProfile.employeeId) {
     transformedProfile.employeeId = actualUserProfile.employeeId;
   }
+
+  const dealershipCandidates: any[] = [];
+
   if (actualUserProfile.dealership) {
-    transformedProfile.dealership = actualUserProfile.dealership;
+    dealershipCandidates.push(
+      normalizeDealershipEntry({
+        dealership: actualUserProfile.dealership,
+        dealershipId:
+          actualUserProfile.dealershipId || actualUserProfile.dealership?.id,
+        dealershipCode: actualUserProfile.dealership?.code,
+        employeeId: actualUserProfile.employeeId,
+        isPrimary: true,
+      })
+    );
+  }
+
+  if (actualUserProfile.primaryDealership) {
+    dealershipCandidates.push(
+      normalizeDealershipEntry(actualUserProfile.primaryDealership)
+    );
+  }
+
+  if (actualUserProfile.activeDealership) {
+    dealershipCandidates.push(
+      normalizeDealershipEntry(actualUserProfile.activeDealership)
+    );
+  }
+
+  if (Array.isArray(actualUserProfile.dealerships)) {
+    actualUserProfile.dealerships
+      .map(normalizeDealershipEntry)
+      .forEach((entry: any) => dealershipCandidates.push(entry));
+  }
+
+  if (Array.isArray(actualUserProfile.dealershipAssignments)) {
+    actualUserProfile.dealershipAssignments
+      .map(normalizeDealershipEntry)
+      .forEach((entry: any) => dealershipCandidates.push(entry));
+  }
+
+  if (Array.isArray(actualUserProfile.dealershipMemberships)) {
+    actualUserProfile.dealershipMemberships
+      .map(normalizeDealershipEntry)
+      .forEach((entry: any) => dealershipCandidates.push(entry));
+  }
+
+  if (Array.isArray(actualUserProfile.memberships)) {
+    actualUserProfile.memberships
+      .map(normalizeDealershipEntry)
+      .forEach((entry: any) => dealershipCandidates.push(entry));
+  }
+
+  const prioritizedDealership = dealershipCandidates.filter(Boolean).reduce((best: any, candidate: any) => {
+    if (!candidate) return best;
+
+    const candidateId = candidate.dealershipId || candidate.dealership?.id;
+    const hasValidUuid = isLikelyUuid(candidateId);
+    const bestId = best?.dealershipId || best?.dealership?.id;
+    const bestHasValidUuid = isLikelyUuid(bestId);
+
+    if (!best) return candidate;
+    if (candidate.isPrimary && !best?.isPrimary) return candidate;
+    if (candidate.isPrimary === best?.isPrimary) {
+      if (hasValidUuid && !bestHasValidUuid) return candidate;
+      if (hasValidUuid === bestHasValidUuid) {
+        if (candidate.dealership?.isActive && !best?.dealership?.isActive) {
+          return candidate;
+        }
+      }
+    }
+
+    return best;
+  }, null as any);
+
+  if (prioritizedDealership?.dealership) {
+    transformedProfile.dealership = {
+      ...prioritizedDealership.dealership,
+      code:
+        prioritizedDealership.dealership?.code ||
+        prioritizedDealership.dealershipCode ||
+        prioritizedDealership.dealership?.dealerCode ||
+        (transformedProfile.dealership as any)?.code,
+    };
+    if (prioritizedDealership.dealershipCode) {
+      (transformedProfile as any).dealershipCode = prioritizedDealership.dealershipCode;
+    } else if ((transformedProfile.dealership as any)?.code) {
+      (transformedProfile as any).dealershipCode = (transformedProfile.dealership as any).code;
+    }
+    if (!transformedProfile.employeeId && prioritizedDealership.employeeId) {
+      transformedProfile.employeeId = prioritizedDealership.employeeId;
+    }
+    if (!transformedProfile.role && prioritizedDealership.role) {
+      transformedProfile.role = prioritizedDealership.role;
+    }
+  }
+
+  if (!transformedProfile.dealershipId) {
+    transformedProfile.dealershipId =
+      actualUserProfile.dealershipId ||
+      prioritizedDealership?.dealershipId ||
+      transformedProfile.dealership?.id ||
+      actualUserProfile.primaryDealershipId ||
+      actualUserProfile.activeDealershipId ||
+      null;
+  }
+
+  // Fall back to prioritized dealership if existing ID looks stale (e.g., legacy cuid)
+  if (
+    prioritizedDealership?.dealershipId &&
+    !isLikelyUuid(transformedProfile.dealershipId)
+  ) {
+    transformedProfile.dealershipId = prioritizedDealership.dealershipId;
+  } else if (prioritizedDealership?.dealershipId) {
+    transformedProfile.dealershipId = prioritizedDealership.dealershipId;
+  }
+
+  if (!transformedProfile.employeeId) {
+    transformedProfile.employeeId =
+      actualUserProfile.employeeId ||
+      actualUserProfile.employeeCode ||
+      actualUserProfile.employee?.id ||
+      actualUserProfile.employee?.employeeCode ||
+      null;
+  }
+
+  if (!(transformedProfile as any).employeeCode && actualUserProfile.employeeCode) {
+    (transformedProfile as any).employeeCode = actualUserProfile.employeeCode;
   }
   
   // Final validation
@@ -195,6 +380,67 @@ function transformUserProfile(userProfile: any): User {
   }
   
   return transformedProfile as User;
+}
+
+async function resolveDealershipProfile(profile: User): Promise<User> {
+  try {
+    const dealershipCode =
+      (profile.dealership as any)?.code ||
+      (profile as any).dealershipCode ||
+      (profile.dealership as any)?.dealerCode ||
+      null;
+
+    if (!dealershipCode) {
+      return profile;
+    }
+
+    if (isLikelyUuid(profile.dealershipId)) {
+      if (!profile.dealership || !isLikelyUuid(profile.dealership.id)) {
+        profile.dealership = {
+          ...(profile.dealership || {}),
+          id: profile.dealershipId,
+          code: dealershipCode,
+        } as any;
+      }
+      return profile;
+    }
+
+    let response = await DealershipAPI.getAllDealerships({
+      limit: 100,
+      includeCount: false,
+      search: dealershipCode,
+    });
+
+    let candidates = response?.data?.dealerships || [];
+    if (!candidates.length) {
+      const fallbackResponse = await DealershipAPI.getAllDealerships({
+        limit: 200,
+        includeCount: false,
+      });
+      candidates = fallbackResponse?.data?.dealerships || [];
+    }
+    const normalizedCode = dealershipCode.toLowerCase();
+
+    const match =
+      candidates.find(
+        (dealer) =>
+          dealer.code?.toLowerCase() === normalizedCode ||
+          dealer.name?.toLowerCase() === normalizedCode
+      ) || candidates.find((dealer) => dealer.code?.toLowerCase().includes(normalizedCode));
+
+    const preferred = match || candidates.find((dealer) => isLikelyUuid(dealer.id));
+
+    if (preferred && isLikelyUuid(preferred.id)) {
+      profile.dealershipId = preferred.id;
+      profile.dealership = preferred as any;
+      (profile as any).dealershipCode = preferred.code;
+    }
+
+    return profile;
+  } catch (error) {
+    console.warn('⚠️ Failed to resolve dealership profile:', error);
+    return profile;
+  }
 }
 
 
@@ -222,7 +468,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         if (storedProfile) {
           const parsedProfile = JSON.parse(storedProfile);
           console.log('🔄 Restored user profile from AsyncStorage:', parsedProfile);
-          dispatch({ type: 'LOGIN_SUCCESS', payload: parsedProfile });
+          try {
+            const normalizedProfile = transformUserProfile(parsedProfile);
+            const resolvedProfile = await resolveDealershipProfile(normalizedProfile);
+            dispatch({ type: 'LOGIN_SUCCESS', payload: resolvedProfile });
+            if (resolvedProfile !== parsedProfile) {
+              await AsyncStorage.setItem('userProfile', JSON.stringify(resolvedProfile));
+            }
+          } catch (normalizationError) {
+            console.warn('⚠️ Stored profile normalization failed, discarding cached data:', normalizationError);
+            await AsyncStorage.removeItem('userProfile');
+          }
         }
       } catch (storageError) {
         console.warn('⚠️ Failed to restore user profile from AsyncStorage:', storageError);
@@ -253,7 +509,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             console.log('   Employee ID:', actualUser.employeeId);
             
             // Transform user profile to ensure correct structure
-            const transformedProfile = transformUserProfile(userProfile);
+            let transformedProfile = transformUserProfile(userProfile);
+            transformedProfile = await resolveDealershipProfile(transformedProfile);
             
             // Store user data in AsyncStorage for persistence
             try {
@@ -329,7 +586,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       console.log('   Employee ID:', userProfile.employeeId);
       
       // Transform user profile to ensure correct structure
-      const transformedProfile = transformUserProfile(userProfile);
+      let transformedProfile = transformUserProfile(userProfile);
+      transformedProfile = await resolveDealershipProfile(transformedProfile);
+      
+      try {
+        await AsyncStorage.setItem('userProfile', JSON.stringify(transformedProfile));
+      } catch (storageError) {
+        console.warn('⚠️ Failed to store user profile after login:', storageError);
+      }
       
       dispatch({ type: 'LOGIN_SUCCESS', payload: transformedProfile });
     } catch (error) {
@@ -368,7 +632,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       console.log('   Dealership:', userProfile.dealership?.name);
       
       // Transform user profile to ensure correct structure
-      const transformedProfile = transformUserProfile(userProfile);
+      let transformedProfile = transformUserProfile(userProfile);
+      transformedProfile = await resolveDealershipProfile(transformedProfile);
+      
+      try {
+        await AsyncStorage.setItem('userProfile', JSON.stringify(transformedProfile));
+      } catch (storageError) {
+        console.warn('⚠️ Failed to store user profile after signup:', storageError);
+      }
       
       dispatch({ type: 'SIGNUP_SUCCESS', payload: transformedProfile });
     } catch (error) {
@@ -437,7 +708,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       console.log('   Employee ID:', userProfile.employeeId);
       
       // Transform user profile to ensure correct structure
-      const transformedProfile = transformUserProfile(userProfile);
+      let transformedProfile = transformUserProfile(userProfile);
+      transformedProfile = await resolveDealershipProfile(transformedProfile);
       
       dispatch({ type: 'LOGIN_SUCCESS', payload: transformedProfile });
       

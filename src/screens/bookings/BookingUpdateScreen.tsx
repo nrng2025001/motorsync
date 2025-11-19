@@ -60,7 +60,6 @@ const STATUS_OPTIONS = [
   { label: 'No Show', value: BookingStatus.NO_SHOW },
   { label: 'Waitlisted', value: BookingStatus.WAITLISTED },
   { label: 'Rescheduled', value: BookingStatus.RESCHEDULED },
-  { label: 'Back Order', value: BookingStatus.BACK_ORDER },
   { label: 'Approved', value: BookingStatus.APPROVED },
   { label: 'Rejected', value: BookingStatus.REJECTED },
 ];
@@ -115,6 +114,10 @@ export function BookingUpdateScreen({ route }: BookingUpdateScreenProps): React.
   const isFieldEditable = (fieldName: keyof Booking, currentValue: any): boolean => {
     if (!booking) return false;
     
+    if (['stockAvailability', 'chassisNumber', 'allocationOrderNumber'].includes(fieldName as string)) {
+      return userRole === 'ADMIN';
+    }
+    
     // Prefilled fields that should NEVER be editable by anyone (customer info, vehicle info, dealer info)
     const prefilledFields = [
       'customerName', 'customerPhone', 'customerEmail', 
@@ -135,7 +138,7 @@ export function BookingUpdateScreen({ route }: BookingUpdateScreenProps): React.
     // Advisor-only fields - only Customer Advisors can edit these
     const advisorOnlyFields = [
       'bookingDate', 'expectedDeliveryDate', 'financeRequired', 'financerName',
-      'fileLoginDate', 'approvalDate', 'stockAvailability', 'backOrderStatus', 'rtoDate'
+      'fileLoginDate', 'approvalDate', 'rtoDate'
     ];
     
     if (advisorOnlyFields.includes(fieldName as string)) {
@@ -186,13 +189,14 @@ export function BookingUpdateScreen({ route }: BookingUpdateScreenProps): React.
     region?: string;
     fileLoginDate?: string;
     approvalDate?: string;
-    backOrderStatus?: boolean;
     rtoDate?: string;
     advisorRemarks?: string;
     teamLeadRemarks?: string;
     salesManagerRemarks?: string;
     generalManagerRemarks?: string;
     adminRemarks?: string;
+    chassisNumber?: string;
+    allocationOrderNumber?: string;
   }>({});
   const [errors, setErrors] = useState<Record<string, string>>({});
 
@@ -260,13 +264,14 @@ export function BookingUpdateScreen({ route }: BookingUpdateScreenProps): React.
       region: bookingData.region || '',
       fileLoginDate: bookingData.fileLoginDate || '',
       approvalDate: bookingData.approvalDate || '',
-      backOrderStatus: bookingData.backOrderStatus || false,
       rtoDate: bookingData.rtoDate || '',
       advisorRemarks: bookingData.advisorRemarks || '',
       teamLeadRemarks: bookingData.teamLeadRemarks || '',
       salesManagerRemarks: bookingData.salesManagerRemarks || '',
       generalManagerRemarks: bookingData.generalManagerRemarks || '',
       adminRemarks: bookingData.adminRemarks || '',
+      chassisNumber: bookingData.chassisNumber || '',
+      allocationOrderNumber: bookingData.allocationOrderNumber || '',
     });
   };
 
@@ -316,6 +321,20 @@ export function BookingUpdateScreen({ route }: BookingUpdateScreenProps): React.
       }
     }
 
+    if (userRole === 'ADMIN') {
+      const availability = formData.stockAvailability || booking?.stockAvailability;
+      if (availability === StockAvailability.VEHICLE_AVAILABLE) {
+        if (!formData.chassisNumber?.trim()) {
+          newErrors.chassisNumber = 'Chassis number is required when the vehicle is available';
+        }
+      }
+      if (availability === StockAvailability.VNA) {
+        if (!formData.allocationOrderNumber?.trim()) {
+          newErrors.allocationOrderNumber = 'Allocation or order number is required when the vehicle is not available';
+        }
+      }
+    }
+
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
@@ -336,7 +355,7 @@ export function BookingUpdateScreen({ route }: BookingUpdateScreenProps): React.
         // Customer Advisors can update advisor-only fields and their remarks
         const advisorOnlyFields = [
           'bookingDate', 'expectedDeliveryDate', 'financeRequired', 'financerName',
-          'fileLoginDate', 'approvalDate', 'stockAvailability', 'backOrderStatus', 'rtoDate', 'status'
+          'fileLoginDate', 'approvalDate', 'rtoDate', 'status'
         ];
         
         // Include advisor-only fields that have values
@@ -372,6 +391,20 @@ export function BookingUpdateScreen({ route }: BookingUpdateScreenProps): React.
           const date = new Date(updateData.rtoDate);
           updateData.rtoDate = date.toISOString().split('T')[0];
         }
+      } else if (userRole === 'ADMIN') {
+        const adminFields = ['stockAvailability', 'chassisNumber', 'allocationOrderNumber', 'status'] as const;
+        adminFields.forEach((field) => {
+          const value = formData[field];
+          if (value !== undefined && value !== '') {
+            updateData[field] = typeof value === 'string' ? value.trim() : value;
+          }
+        });
+        if (formData.chassisNumber !== undefined && formData.chassisNumber === '') {
+          updateData.chassisNumber = '';
+        }
+        if (formData.allocationOrderNumber !== undefined && formData.allocationOrderNumber === '') {
+          updateData.allocationOrderNumber = '';
+        }
       } else {
         // Higher-level roles can only update their respective remarks
         const remarksFields = ['advisorRemarks', 'teamLeadRemarks', 'salesManagerRemarks', 'generalManagerRemarks', 'adminRemarks'];
@@ -393,6 +426,9 @@ export function BookingUpdateScreen({ route }: BookingUpdateScreenProps): React.
         // Update form data with the latest remarks from backend
         setFormData(prev => ({
           ...prev,
+          stockAvailability: updatedBooking.stockAvailability,
+          chassisNumber: updatedBooking.chassisNumber || '',
+          allocationOrderNumber: updatedBooking.allocationOrderNumber || '',
           advisorRemarks: updatedBooking.advisorRemarks || '',
           teamLeadRemarks: updatedBooking.teamLeadRemarks || '',
           salesManagerRemarks: updatedBooking.salesManagerRemarks || '',
@@ -817,6 +853,35 @@ export function BookingUpdateScreen({ route }: BookingUpdateScreenProps): React.
             </Text>
             
             {renderStockMenu()}
+            <TextInput
+              label="Chassis Number"
+              value={formData.chassisNumber || ''}
+              onChangeText={(value) => handleTextChange('chassisNumber', value)}
+              mode="outlined"
+              editable={isFieldEditable('chassisNumber', booking?.chassisNumber)}
+              style={styles.input}
+              placeholder="Enter chassis number"
+            />
+            {errors.chassisNumber && <HelperText type="error">{errors.chassisNumber}</HelperText>}
+            {!isFieldEditable('chassisNumber', booking?.chassisNumber) && formData.chassisNumber && (
+              <HelperText type="info">Only admins can update chassis number</HelperText>
+            )}
+
+            <TextInput
+              label="Allocation / Order Number"
+              value={formData.allocationOrderNumber || ''}
+              onChangeText={(value) => handleTextChange('allocationOrderNumber', value)}
+              mode="outlined"
+              editable={isFieldEditable('allocationOrderNumber', booking?.allocationOrderNumber)}
+              style={styles.input}
+              placeholder="Enter allocation or order number"
+            />
+            {errors.allocationOrderNumber && (
+              <HelperText type="error">{errors.allocationOrderNumber}</HelperText>
+            )}
+            {!isFieldEditable('allocationOrderNumber', booking?.allocationOrderNumber) && formData.allocationOrderNumber && (
+              <HelperText type="info">Only admins can update allocation/order number</HelperText>
+            )}
           </Card.Content>
         </Card>
 
@@ -847,15 +912,6 @@ export function BookingUpdateScreen({ route }: BookingUpdateScreenProps): React.
               onChange={(date) => handleDateChange('rtoDate', date)}
               style={styles.input}
             />
-
-            <View style={styles.switchRow}>
-              <Text variant="bodyLarge">Back Order Status</Text>
-              <Switch
-                value={formData.backOrderStatus || false}
-                onValueChange={(value) => handleBooleanChange('backOrderStatus', value)}
-                disabled={!isFieldEditable('backOrderStatus', formData.backOrderStatus)}
-              />
-            </View>
           </Card.Content>
         </Card>
 

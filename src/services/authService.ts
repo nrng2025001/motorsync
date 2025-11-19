@@ -227,11 +227,30 @@ export class AuthService {
       
       // Sync user data with backend
       // Note: Role assignment should be handled by backend admin, not hardcoded here
+      let roleName: string | undefined;
+      try {
+        const cachedProfile = await AsyncStorage.getItem('userProfile');
+        if (cachedProfile) {
+          const parsedProfile = JSON.parse(cachedProfile);
+          roleName =
+            parsedProfile?.role?.name ||
+            parsedProfile?.roleName ||
+            parsedProfile?.assignedRole ||
+            undefined;
+        }
+      } catch (error) {
+        console.warn('⚠️ Failed to read cached profile for role resolution:', error);
+      }
+
+      if (!roleName) {
+        roleName = 'CUSTOMER_ADVISOR';
+      }
+
       await AuthAPI.syncFirebaseUser({
         firebaseUid: user.uid,
         email: user.email || '',
-        name: user.displayName || ''
-        // roleName removed - should be assigned by backend admin
+        name: user.displayName || '',
+        roleName,
       });
       
       console.log('User synced with backend successfully');

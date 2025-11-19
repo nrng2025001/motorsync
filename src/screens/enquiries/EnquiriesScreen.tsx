@@ -3,7 +3,7 @@
  * Displays enquiries organized by HOT, LOST, and BOOKED categories
  */
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   View,
   StyleSheet,
@@ -28,7 +28,7 @@ import {
   IconButton,
 } from 'react-native-paper';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useNavigation, useFocusEffect } from '@react-navigation/native';
+import { useNavigation, useFocusEffect, useRoute } from '@react-navigation/native';
 import { StackNavigationProp } from '@react-navigation/stack';
 import { LinearGradient as ExpoLinearGradient } from 'expo-linear-gradient';
 import Svg, { Path, Rect, Defs, LinearGradient, Stop, G, Ellipse, Circle } from 'react-native-svg';
@@ -42,11 +42,17 @@ import { MainStackParamList } from '../../navigation/MainNavigator';
 import { theme, spacing, shadows, borderRadius } from '../../utils/theme';
 import { useAuth } from '../../context/AuthContext';
 import { getUserRole } from '../../utils/roleUtils';
+import { useDealership } from '../../context/DealershipContext';
 import { getDataFilterOptions, canSeeUserData, getRoleDisplayNameWithHierarchy, filterEnquiriesByHierarchy } from '../../utils/hierarchyUtils';
 
 const { width, height } = Dimensions.get('window');
 
 type NavigationProp = StackNavigationProp<MainStackParamList>;
+
+const isLikelyUuid = (id?: string | null) =>
+  !!id &&
+  typeof id === 'string' &&
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id);
 
 /**
  * Enhanced Background Pattern with Animated Elements
@@ -90,7 +96,9 @@ const BackgroundPattern = () => (
 
 export function EnquiriesScreen(): React.JSX.Element {
   const navigation = useNavigation<NavigationProp>();
+  const route = useRoute<any>();
   const { state: authState } = useAuth();
+  const { dealership } = useDealership();
 
   // Get user role and permissions - will throw error if role is missing
   const userRole = getUserRole(authState.user);
@@ -107,6 +115,7 @@ export function EnquiriesScreen(): React.JSX.Element {
   const [refreshing, setRefreshing] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [snackbar, setSnackbar] = useState({ visible: false, message: '', type: 'info' as 'info' | 'success' | 'error' });
+  const [pendingFilterIds, setPendingFilterIds] = useState<string[] | null>(null);
   
   // Filter and menu states
   const [showStatusMenu, setShowStatusMenu] = useState(false);
@@ -114,6 +123,35 @@ export function EnquiriesScreen(): React.JSX.Element {
   const [showFilterMenu, setShowFilterMenu] = useState(false);
   const [sortBy, setSortBy] = useState<'createdAt' | 'customerName' | 'status'>('createdAt');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
+
+  const pendingIdsSet = useMemo(() => {
+    return pendingFilterIds ? new Set(pendingFilterIds) : null;
+  }, [pendingFilterIds]);
+
+  const pendingFilterActive = !!(pendingIdsSet && pendingIdsSet.size > 0);
+
+  const resolvedDealershipId = React.useMemo(() => {
+    return (
+      dealership?.id ||
+      authState.user?.dealership?.id ||
+      authState.user?.dealershipId ||
+      null
+    );
+  }, [
+    dealership?.id,
+    authState.user?.dealership?.id,
+    authState.user?.dealershipId,
+  ]);
+
+  const resolvedDealershipCode = React.useMemo(() => {
+    const userDealership = authState.user?.dealership as any;
+    return (
+      dealership?.code ||
+      userDealership?.code ||
+      (authState.user as any)?.dealershipCode ||
+      null
+    );
+  }, [dealership?.code, authState.user?.dealership, authState.user]);
 
   // Role-based permission functions
   const canCreateEnquiry = () => {
@@ -188,18 +226,19 @@ export function EnquiriesScreen(): React.JSX.Element {
         enquiry.customerContact.includes(query) ||
         (enquiry.customerEmail && enquiry.customerEmail.toLowerCase().includes(query)) ||
         enquiry.model.toLowerCase().includes(query) ||
-        (enquiry.variant && enquiry.variant.toLowerCase().includes(query))
+        (enquiry.variant && enquiry.variant.toLowerCase().includes(query)) ||
+        (enquiry.location && enquiry.location.toLowerCase().includes(query)) ||
+        (enquiry.source && enquiry.source.toLowerCase().includes(query))
       );
-    }
-
-    // Apply category filter
-    if (selectedCategory !== 'ALL') {
-      filtered = filtered.filter(enquiry => enquiry.category === selectedCategory);
     }
 
     // Apply status filter
     if (selectedStatus !== 'ALL') {
       filtered = filtered.filter(enquiry => enquiry.status === selectedStatus);
+    }
+
+    if (pendingIdsSet && pendingIdsSet.size > 0) {
+      filtered = filtered.filter((enquiry) => pendingIdsSet.has(enquiry.id));
     }
 
     // Apply sorting
@@ -230,17 +269,49 @@ export function EnquiriesScreen(): React.JSX.Element {
     try {
       if (showLoading) setLoading(true);
       
+      if (
+        !resolvedDealershipId ||
+        !resolvedDealershipCode ||
+        !isLikelyUuid(resolvedDealershipId)
+      ) {
+        console.warn(
+          '[EnquiriesScreen] Missing dealership context, skipping fetch until available',
+          { resolvedDealershipId, resolvedDealershipCode }
+        );
+        setLoading(false);
+        setRefreshing(false);
+        return;
+      }
+
       // Fetch all enquiries without category filter
       console.log('🔄 [EnquiriesScreen] Fetching enquiries...');
       // Handle both possible structures: flat and nested
       const userData = (authState.user as any)?.user || authState.user;
       console.log('🔍 [EnquiriesScreen] Current user ID:', userData?.firebaseUid);
-      const response = await enquiryAPI.getEnquiries({ 
-        page: 1, 
-        limit: 100, 
-        sortBy: 'createdAt', 
-        sortOrder: 'desc' 
-      });
+      const requestParams: any = {
+        page: 1,
+        limit: 100,
+        sortBy: 'createdAt',
+        sortOrder: 'desc',
+        dealershipId: resolvedDealershipId,
+        dealershipCode: resolvedDealershipCode,
+      };
+      requestParams.scope =
+        userRole === 'CUSTOMER_ADVISOR'
+          ? 'advisor'
+          : dataFilterOptions.canSeeTeam
+          ? 'team'
+          : 'dealership';
+
+      if (selectedCategory !== 'ALL') {
+        requestParams.category = selectedCategory;
+      }
+
+      if (selectedStatus !== 'ALL') {
+        requestParams.status = selectedStatus;
+      }
+
+      const response = await enquiryAPI.getEnquiries(requestParams);
       console.log('📊 [EnquiriesScreen] Response received:', response);
       console.log('📊 [EnquiriesScreen] Response.data:', response?.data);
       console.log('📊 [EnquiriesScreen] Response.data.enquiries:', (response?.data as any)?.enquiries);
@@ -304,8 +375,44 @@ export function EnquiriesScreen(): React.JSX.Element {
     } finally {
       setLoading(false);
       setRefreshing(false);
+      if (!resolvedDealershipId || !resolvedDealershipCode) {
+        setLoading(false);
+      }
     }
-  }, [userRole]);
+  }, [
+    authState.user,
+    dataFilterOptions.canSeeTeam,
+    resolvedDealershipCode,
+    resolvedDealershipId,
+    selectedCategory,
+    selectedStatus,
+    userRole,
+  ]);
+
+  useEffect(() => {
+    if (route.params?.pendingIds) {
+      const idsParam = route.params.pendingIds;
+      const ids = Array.isArray(idsParam) ? idsParam : [idsParam];
+      const cleanedIds = ids.filter(Boolean);
+      if (cleanedIds.length > 0) {
+        setPendingFilterIds(cleanedIds);
+        setSelectedCategory('ALL');
+        setSelectedStatus('ALL');
+        setSearchQuery('');
+      }
+      navigation.setParams({ pendingIds: undefined });
+    }
+  }, [route.params?.pendingIds, navigation]);
+
+  useEffect(() => {
+    if (route.params?.initialCategory) {
+      const categoryParam = route.params.initialCategory;
+      if (categoryParam === 'ALL' || Object.values(EnquiryCategory).includes(categoryParam)) {
+        setSelectedCategory(categoryParam);
+      }
+      navigation.setParams({ initialCategory: undefined });
+    }
+  }, [route.params?.initialCategory, navigation]);
 
   // Initial load and category change
   useEffect(() => {
@@ -540,6 +647,10 @@ export function EnquiriesScreen(): React.JSX.Element {
     );
   };
 
+  const clearPendingFilter = useCallback(() => {
+    setPendingFilterIds(null);
+  }, []);
+
   const renderEmptyState = () => {
     const getEmptyStateContent = () => {
       switch (selectedCategory) {
@@ -654,15 +765,21 @@ export function EnquiriesScreen(): React.JSX.Element {
         <View style={styles.header}>
           <View style={styles.headerTop}>
             <View>
-              <Text variant="displaySmall" style={styles.title}>
-                {authState.user?.name || 'Employee'}
+              <Text variant="headlineLarge" style={styles.overviewTitle}>
+                Hot Enquiry Overview
               </Text>
-              <Text variant="bodyMedium" style={styles.subtitle}>
-                {authState.user?.dealership?.name || 'Dealership'}
+              <Text variant="bodyMedium" style={styles.overviewSubtitle}>
+                TRACK &amp; MANAGE YOUR ENQUIRY
               </Text>
-              <Text variant="bodySmall" style={styles.roleIndicator}>
-                Employee Code: {authState.user?.employeeId || '—'}
-              </Text>
+              <View style={styles.userMeta}>
+                <Text style={styles.userMetaPrimary}>{authState.user?.name || 'Employee'}</Text>
+                <Text style={styles.userMetaSecondary}>
+                  {authState.user?.dealership?.name || 'Dealership'}
+                </Text>
+                <Text style={styles.userMetaSecondary}>
+                  Employee Code: {authState.user?.employeeId || '—'}
+                </Text>
+              </View>
             </View>
             <View style={styles.headerIcon}>
               <Text style={styles.headerIconText}>📊</Text>
@@ -739,16 +856,29 @@ export function EnquiriesScreen(): React.JSX.Element {
                   <Text style={styles.sectionTitle}>
                     {getFilteredEnquiries().length} {getFilteredEnquiries().length === 1 ? 'Enquiry' : 'Enquiries'}
                   </Text>
-                  {searchQuery ? (
-                    <Chip
-                      mode="flat"
-                      onClose={() => setSearchQuery('')}
-                      style={styles.searchChip}
-                      textStyle={styles.searchChipText}
-                    >
-                      Filtered
-                    </Chip>
-                  ) : null}
+                  <View style={styles.listHeaderChips}>
+                    {pendingFilterActive && (
+                      <Chip
+                        mode="flat"
+                        icon="alert-circle"
+                        onClose={clearPendingFilter}
+                        style={styles.pendingFilterChip}
+                        textStyle={styles.pendingFilterChipText}
+                      >
+                        Pending Updates
+                      </Chip>
+                    )}
+                    {searchQuery ? (
+                      <Chip
+                        mode="flat"
+                        onClose={() => setSearchQuery('')}
+                        style={styles.searchChip}
+                        textStyle={styles.searchChipText}
+                      >
+                        Filtered
+                      </Chip>
+                    ) : null}
+                  </View>
                 </View>
                 {getFilteredEnquiries().map((enquiry, index) => (
                   <Animated.View
@@ -880,26 +1010,34 @@ const styles = StyleSheet.create({
   headerIconText: {
     fontSize: 24,
   },
-  title: {
-    fontWeight: '900',
+  overviewTitle: {
+    fontWeight: '800',
     color: '#0F172A',
-    fontSize: 32,
-    letterSpacing: -1,
-    lineHeight: 38,
+    fontSize: 28,
+    letterSpacing: -0.5,
+    lineHeight: 34,
+    textTransform: 'capitalize',
   },
-  subtitle: {
-    color: '#64748B',
-    marginTop: 4,
-    fontSize: 15,
-    fontWeight: '500',
-    letterSpacing: -0.2,
-  },
-  roleIndicator: {
+  overviewSubtitle: {
     color: '#3B82F6',
-    marginTop: 2,
-    fontSize: 12,
+    marginTop: 4,
+    fontSize: 13,
+    fontWeight: '700',
+    letterSpacing: 1.2,
+  },
+  userMeta: {
+    marginTop: 14,
+    gap: 2,
+  },
+  userMetaPrimary: {
+    color: '#0F172A',
+    fontSize: 16,
     fontWeight: '600',
-    letterSpacing: 0.2,
+  },
+  userMetaSecondary: {
+    color: '#64748B',
+    fontSize: 13,
+    fontWeight: '500',
   },
   statsBar: {
     flexDirection: 'row',
@@ -1026,6 +1164,11 @@ const styles = StyleSheet.create({
     color: '#0F172A',
     letterSpacing: -0.4,
   },
+  listHeaderChips: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
   searchChip: {
     backgroundColor: '#EFF6FF',
     borderWidth: 1,
@@ -1033,6 +1176,16 @@ const styles = StyleSheet.create({
   },
   searchChipText: {
     color: '#3B82F6',
+    fontWeight: '600',
+    fontSize: 13,
+  },
+  pendingFilterChip: {
+    backgroundColor: '#FFF7ED',
+    borderWidth: 1,
+    borderColor: '#FDBA74',
+  },
+  pendingFilterChipText: {
+    color: '#EA580C',
     fontWeight: '600',
     fontSize: 13,
   },
