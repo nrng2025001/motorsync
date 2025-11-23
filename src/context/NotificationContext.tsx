@@ -7,6 +7,7 @@ import React, { createContext, useContext, useState, useEffect, useCallback } fr
 import { Alert } from 'react-native';
 import NotificationAPI, { Notification, NotificationStats } from '../services/NotificationAPI';
 import NotificationService from '../services/NotificationService';
+import { useAuth } from './AuthContext';
 
 interface NotificationContextType {
   // State
@@ -44,6 +45,11 @@ interface NotificationProviderProps {
 }
 
 export const NotificationProvider: React.FC<NotificationProviderProps> = ({ children }) => {
+  // Auth context
+  const { state: authState } = useAuth();
+  const isAuthenticated = authState.isAuthenticated;
+  const user = authState.user;
+
   // State
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [stats, setStats] = useState<NotificationStats | null>(null);
@@ -52,6 +58,12 @@ export const NotificationProvider: React.FC<NotificationProviderProps> = ({ chil
 
   // Load notification history
   const loadNotifications = useCallback(async (page: number = 1, type: string | null = null) => {
+    // ✅ Check authentication before loading
+    if (!isAuthenticated || !user) {
+      console.log('⏭️  Skipping notification load - not authenticated');
+      return;
+    }
+
     setLoading(true);
     try {
       console.log('📱 Loading notifications...', { page, type });
@@ -70,10 +82,16 @@ export const NotificationProvider: React.FC<NotificationProviderProps> = ({ chil
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [isAuthenticated, user]);
 
   // Load notification statistics
   const loadStats = useCallback(async () => {
+    // ✅ Check authentication before loading
+    if (!isAuthenticated || !user) {
+      console.log('⏭️  Skipping stats load - not authenticated');
+      return;
+    }
+
     try {
       console.log('📊 Loading notification stats...');
       const response = await NotificationAPI.getNotificationStats();
@@ -87,7 +105,7 @@ export const NotificationProvider: React.FC<NotificationProviderProps> = ({ chil
     } catch (error) {
       console.error('Error loading stats:', error);
     }
-  }, []);
+  }, [isAuthenticated, user]);
 
   // Mark notification as read
   const markAsRead = useCallback(async (notificationId: string) => {
@@ -235,6 +253,12 @@ export const NotificationProvider: React.FC<NotificationProviderProps> = ({ chil
 
   // Initialize notifications on app start
   useEffect(() => {
+    // ✅ Wait for authentication before initializing
+    if (!isAuthenticated || !user) {
+      console.log('⏭️  Waiting for authentication before initializing notifications...');
+      return;
+    }
+
     console.log('🚀 Initializing notification system...');
     NotificationService.initializeNotifications().then(result => {
       if (result.success) {
@@ -281,11 +305,13 @@ export const NotificationProvider: React.FC<NotificationProviderProps> = ({ chil
         'An unexpected error occurred while setting up notifications.',
         [{ text: 'OK' }]
       );
-      // Still try to load data even if notifications fail
-      loadNotifications(1);
-      loadStats();
+      // Still try to load data even if notifications fail (only if authenticated)
+      if (isAuthenticated && user) {
+        loadNotifications(1);
+        loadStats();
+      }
     });
-  }, [loadNotifications, loadStats]);
+  }, [isAuthenticated, user, loadNotifications, loadStats]);
 
   const value: NotificationContextType = {
     // State

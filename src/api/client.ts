@@ -40,8 +40,27 @@ export const apiClient: AxiosInstance = axios.create({
 apiClient.interceptors.request.use(
   async (config) => {
     try {
+      // ✅ Skip auth check for login endpoints
+      if (config.url?.includes('/auth/login') || config.url?.includes('/auth/sync')) {
+        return config;
+      }
+
       // Get Firebase ID token from current user
       const user = auth.currentUser;
+      
+      // ✅ Check if authenticated before making requests
+      if (!user) {
+        // Check if token exists in AsyncStorage as fallback
+        const token = await AsyncStorage.getItem('firebaseToken');
+        if (!token) {
+          if (__DEV__) {
+            console.log('⏭️  Skipping request - not authenticated:', config.url);
+          }
+          // Don't reject, just return config - let the request fail naturally
+          // This prevents 401 errors from being logged unnecessarily
+        }
+      }
+      
       if (user) {
         // Force refresh token if it's close to expiration
         const token = await user.getIdToken(true);

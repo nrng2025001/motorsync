@@ -34,6 +34,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useNotifications } from '../../context/NotificationContext';
 import { Notification } from '../../services/NotificationAPI';
 import { MainStackParamList } from '../../navigation/MainNavigator';
+import { useAuth } from '../../context/AuthContext';
 import { theme, spacing, shadows, borderRadius } from '../../utils/theme';
 
 const { width } = Dimensions.get('window');
@@ -109,11 +110,22 @@ export function NotificationsScreen(): React.JSX.Element {
   const [testBody, setTestBody] = useState('');
   const [snackbar, setSnackbar] = useState({ visible: false, message: '', type: 'info' as 'info' | 'success' | 'error' });
 
+  // Auth check
+  const { state: authState } = useAuth();
+  const isAuthenticated = authState.isAuthenticated;
+  const user = authState.user;
+
   // Load data on mount
   useEffect(() => {
+    // ✅ Wait for authentication before loading
+    if (!isAuthenticated || !user) {
+      console.log('⏭️  Skipping notification load - not authenticated');
+      return;
+    }
+
     loadNotifications(1, selectedType);
     loadStats();
-  }, [selectedType]);
+  }, [selectedType, isAuthenticated, user, loadNotifications, loadStats]);
 
   // Filter notifications based on search query
   const filteredNotifications = notifications.filter(notification => {
@@ -125,16 +137,50 @@ export function NotificationsScreen(): React.JSX.Element {
   });
 
   // Handle notification press
+  // Phase 2: Enhanced to handle escalation alerts
   const handleNotificationPress = useCallback(async (notification: Notification) => {
     if (!notification.delivered) {
       await markAsRead(notification.id);
     }
     
-    // Navigate based on notification type
-    if (notification.data?.enquiryId) {
-      navigation.navigate('EnquiryDetails', { enquiryId: notification.data.enquiryId });
-    } else if (notification.data?.bookingId) {
-      navigation.navigate('BookingDetails', { bookingId: notification.data.bookingId });
+    const notificationType = notification.type || notification.data?.type;
+    const entityId = notification.data?.entityId;
+    
+    // Phase 2: Handle escalation alerts
+    switch (notificationType) {
+      case 'inactivity_alert':
+      case 'aging_alert':
+      case 'aging_alert_sm':
+      case 'aging_alert_gm':
+        // Navigate to enquiry details
+        if (entityId || notification.data?.enquiryId) {
+          navigation.navigate('EnquiryDetails', { 
+            enquiryId: entityId || notification.data.enquiryId 
+          });
+        }
+        break;
+        
+      case 'retail_delay':
+        // Navigate to booking details
+        if (entityId || notification.data?.bookingId) {
+          navigation.navigate('BookingDetails', { 
+            bookingId: entityId || notification.data.bookingId 
+          });
+        }
+        break;
+        
+      default:
+        // Default navigation based on entity IDs
+        if (notification.data?.enquiryId || entityId) {
+          navigation.navigate('EnquiryDetails', { 
+            enquiryId: notification.data?.enquiryId || entityId 
+          });
+        } else if (notification.data?.bookingId) {
+          navigation.navigate('BookingDetails', { 
+            bookingId: notification.data.bookingId 
+          });
+        }
+        break;
     }
   }, [markAsRead, navigation]);
 

@@ -8,6 +8,7 @@ import { View, StyleSheet, TouchableOpacity } from 'react-native';
 import { Card, Text, Chip, IconButton, Button } from 'react-native-paper';
 import { Enquiry, EnquiryCategory } from '../services/types';
 import { formatEnquirySource } from '../utils/formatting';
+import { spacing, borderRadius, shadows } from '../utils/theme';
 
 interface EnquiryCardProps {
   enquiry: Enquiry;
@@ -185,22 +186,20 @@ export function EnquiryCard({
 
 const styles = StyleSheet.create({
   card: {
-    marginBottom: 20,
+    marginBottom: spacing.lg,
     backgroundColor: '#FFFFFF',
-    borderRadius: 16,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.08,
-    shadowRadius: 12,
-    elevation: 6,
+    borderRadius: borderRadius.lg,
+    ...shadows.medium,
     borderTopWidth: 4,
     borderTopColor: '#EF4444',
+    borderWidth: 1,
+    borderColor: '#F1F5F9',
   },
   content: {
-    padding: 20,
+    padding: spacing.lg,
   },
   header: {
-    marginBottom: 20,
+    marginBottom: spacing.lg,
   },
   customerInfo: {
     flex: 1,
@@ -208,7 +207,7 @@ const styles = StyleSheet.create({
   customerNameRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 12,
+    marginBottom: spacing.sm,
   },
   categoryIndicator: {
     fontSize: 20,
@@ -225,14 +224,10 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   statusBadge: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 8,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 2,
-    elevation: 1,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs,
+    borderRadius: borderRadius.sm,
+    ...shadows.small,
   },
   statusBadgeText: {
     fontSize: 13,
@@ -240,12 +235,12 @@ const styles = StyleSheet.create({
     letterSpacing: -0.1,
   },
   detailsContainer: {
-    marginBottom: 20,
+    marginBottom: spacing.lg,
   },
   detailRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 8,
+    marginBottom: spacing.sm,
   },
   detailIcon: {
     fontSize: 16,
@@ -261,9 +256,9 @@ const styles = StyleSheet.create({
     lineHeight: 20,
   },
   footer: {
-    paddingTop: 16,
+    paddingTop: spacing.md,
     borderTopWidth: 1,
-    borderTopColor: '#E2E8F0',
+    borderTopColor: '#E5E7EB',
   },
   timestamp: {
     fontSize: 13,
@@ -277,12 +272,10 @@ const styles = StyleSheet.create({
     flexWrap: 'wrap',
   },
   actionButton: {
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 8,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.sm,
+    borderRadius: borderRadius.sm,
+    ...shadows.small,
     shadowRadius: 4,
     elevation: 2,
   },

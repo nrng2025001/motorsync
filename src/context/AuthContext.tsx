@@ -574,6 +574,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       console.log('   User UID:', userCredential.user.uid);
       console.log('   Email:', userCredential.user.email);
       
+      // Sync user to backend (POST /api/auth/sync)
+      try {
+        console.log('🔄 Syncing user to backend...');
+        await AuthAPI.syncFirebaseUser({
+          firebaseUid: userCredential.user.uid,
+          email: userCredential.user.email || email.trim().toLowerCase(),
+          name: userCredential.user.displayName || email.trim().toLowerCase().split('@')[0],
+        });
+        console.log('✅ User synced to backend successfully');
+      } catch (syncError) {
+        console.warn('⚠️ User sync failed (may already exist):', syncError);
+        // Continue even if sync fails - user may already exist
+      }
+      
       // Get user profile from backend
       console.log('🔄 Fetching profile from backend...');
       const userProfile = await AuthAPI.getProfile();

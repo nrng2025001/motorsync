@@ -162,6 +162,14 @@ export function DashboardScreen({ navigation }: any): React.JSX.Element {
   const [refreshing, setRefreshing] = useState(false);
   const [pendingSummary, setPendingSummary] = useState<PendingRemarksSummary | null>(null);
   const [bookingPlan, setBookingPlan] = useState<TodayBookingPlan | null>(null);
+  // Phase 2: Funnel Math
+  const [funnelData, setFunnelData] = useState<{
+    carryForward: number;
+    newThisMonth: number;
+    delivered: number;
+    lost: number;
+    actualLive: number;
+  } | null>(null);
 
   const normalizeBookingPlan = useCallback(
     (plan: any): TodayBookingPlan | null => {
@@ -227,7 +235,7 @@ export function DashboardScreen({ navigation }: any): React.JSX.Element {
       const dealershipId = state.user?.dealership?.id || state.user?.dealershipId;
       const dealershipCode = state.user?.dealership?.code;
 
-      if (!dealershipId || !dealershipCode || !isLikelyUuid(dealershipId)) {
+      if (!dealershipId || !dealershipCode) {
         console.warn('[Dashboard] Waiting for valid dealership context before fetching data', {
           dealershipId,
           dealershipCode,
@@ -257,7 +265,6 @@ export function DashboardScreen({ navigation }: any): React.JSX.Element {
         .getTodayBookingPlan({
           dealershipId,
           dealershipCode,
-          scope,
         })
         .catch((err) => {
           console.error('Error fetching today booking plan:', err);
@@ -285,8 +292,19 @@ export function DashboardScreen({ navigation }: any): React.JSX.Element {
       ]);
       
       // Extract data from responses - handle nested data structure
+      console.log('📊 [Dashboard] Enquiries response structure:', {
+        hasData: !!enquiriesResponse?.data,
+        dataKeys: enquiriesResponse?.data ? Object.keys(enquiriesResponse.data) : [],
+        response: enquiriesResponse,
+      });
+      
       const allEnquiries = (enquiriesResponse?.data as any)?.enquiries || (enquiriesResponse?.data as any)?.data?.enquiries || [];
       bookings = bookingsData.bookings || [];
+      
+      console.log('📊 [Dashboard] Extracted enquiries:', {
+        count: allEnquiries.length,
+        sample: allEnquiries[0],
+      });
       
       
       
@@ -778,6 +796,38 @@ export function DashboardScreen({ navigation }: any): React.JSX.Element {
               </Text>
             </View>
           </View>
+          
+          {/* Phase 2: Bookings Funnel Math */}
+          {funnelData && (
+            <Card style={styles.funnelCard}>
+              <Card.Content>
+                <Text variant="titleLarge" style={styles.funnelTitle}>
+                  Bookings Funnel
+                </Text>
+                <View style={styles.funnelRow}>
+                  <Text style={styles.funnelLabel}>Carry Forward:</Text>
+                  <Text style={styles.funnelValue}>{funnelData.carryForward}</Text>
+                </View>
+                <View style={styles.funnelRow}>
+                  <Text style={styles.funnelLabel}>New This Month:</Text>
+                  <Text style={styles.funnelValue}>{funnelData.newThisMonth}</Text>
+                </View>
+                <View style={styles.funnelRow}>
+                  <Text style={styles.funnelLabel}>Delivered:</Text>
+                  <Text style={[styles.funnelValue, styles.funnelNegative]}>-{funnelData.delivered}</Text>
+                </View>
+                <View style={styles.funnelRow}>
+                  <Text style={styles.funnelLabel}>Lost:</Text>
+                  <Text style={[styles.funnelValue, styles.funnelNegative]}>-{funnelData.lost}</Text>
+                </View>
+                <View style={styles.funnelDivider} />
+                <View style={styles.funnelRow}>
+                  <Text style={styles.actualLiveLabel}>Actual Live:</Text>
+                  <Text style={styles.actualLiveValue}>{funnelData.actualLive}</Text>
+                </View>
+              </Card.Content>
+            </Card>
+          )}
         </View>
         {/* Today's Booking Plan */}
         <View style={styles.section}>
@@ -1969,5 +2019,54 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#64748B',
     textAlign: 'center',
+  },
+  // Phase 2: Funnel Math Styles
+  funnelCard: {
+    marginTop: 16,
+    marginBottom: 8,
+    elevation: 2,
+    borderRadius: 12,
+  },
+  funnelTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#0F172A',
+    marginBottom: 16,
+  },
+  funnelRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: '#E5E7EB',
+  },
+  funnelLabel: {
+    fontSize: 14,
+    color: '#64748B',
+  },
+  funnelValue: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#3B82F6',
+  },
+  funnelNegative: {
+    color: '#EF4444',
+  },
+  funnelDivider: {
+    height: 2,
+    backgroundColor: '#3B82F6',
+    marginVertical: 12,
+    borderRadius: 1,
+  },
+  actualLiveLabel: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#0F172A',
+  },
+  actualLiveValue: {
+    fontSize: 20,
+    fontWeight: '800',
+    color: '#10B981',
   },
 });

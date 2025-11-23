@@ -133,16 +133,28 @@ export function BookingsScreen(): React.JSX.Element {
       
       const currentUserId = authState.user?.firebaseUid || authState.user?.id;
       const dealershipId = authState.user?.dealership?.id || authState.user?.dealershipId;
-      const dealershipCode = authState.user?.dealership?.code;
+      const dealershipCode = authState.user?.dealership?.code || authState.user?.dealershipCode;
 
-      if (!dealershipId || !dealershipCode || !isLikelyUuid(dealershipId)) {
+      // Only check if dealershipId and dealershipCode exist - don't require UUID format
+      // Some dealership IDs may be custom strings like "default-dealership-001"
+      if (!dealershipId || !dealershipCode) {
         console.warn('[BookingsScreen] Waiting for valid dealership context before fetching', {
           dealershipId,
           dealershipCode,
+          hasDealership: !!authState.user?.dealership,
         });
         setLoading(false);
         setRefreshing(false);
         return;
+      }
+      
+      if (__DEV__) {
+        console.log('[BookingsScreen] Fetching bookings with context:', {
+          currentUserId,
+          dealershipId,
+          dealershipCode,
+          userRole,
+        });
       }
       const scope =
         userRole === 'CUSTOMER_ADVISOR'
@@ -159,7 +171,26 @@ export function BookingsScreen(): React.JSX.Element {
       // Ensure we have a valid bookings array
       let bookingsArray = response.bookings || [];
       if (!Array.isArray(bookingsArray)) {
+        console.warn('[BookingsScreen] Response bookings is not an array:', typeof bookingsArray, bookingsArray);
         bookingsArray = [];
+      }
+      
+      // Debug logging
+      if (__DEV__) {
+        console.log('[BookingsScreen] Fetched bookings:', {
+          count: bookingsArray.length,
+          userRole,
+          currentUserId,
+          dealershipId,
+          dealershipCode,
+          scope,
+          firstBooking: bookingsArray[0] ? {
+            id: bookingsArray[0].id,
+            customerName: bookingsArray[0].customerName,
+            advisorId: bookingsArray[0].advisorId,
+            status: bookingsArray[0].status
+          } : null
+        });
       }
       
       // Apply hierarchical filtering for managers
@@ -175,12 +206,32 @@ export function BookingsScreen(): React.JSX.Element {
       }
       
       setBookings(bookingsArray);
+      
+      // Show a message if no bookings found (but not an error)
+      if (bookingsArray.length === 0 && !loading) {
+        if (__DEV__) {
+          console.log('[BookingsScreen] No bookings found. This might be expected if:', {
+            userRole,
+            hasDealership: !!dealershipId && !!dealershipCode,
+            dealershipId,
+            dealershipCode,
+            scope
+          });
+        }
+      }
     } catch (error: any) {
-      console.error('Error fetching bookings:', error);
+      console.error('[BookingsScreen] Error fetching bookings:', error);
+      console.error('[BookingsScreen] Error details:', {
+        message: error.message,
+        stack: error.stack,
+        response: error.response?.data,
+        status: error.response?.status
+      });
       setSnackbar({
         visible: true,
-        message: error.message || 'Failed to load bookings',
+        message: error.message || 'Failed to load bookings. Please try again.',
       });
+      setBookings([]); // Ensure bookings is set to empty array on error
     } finally {
       setLoading(false);
       setRefreshing(false);

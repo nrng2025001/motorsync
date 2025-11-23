@@ -92,11 +92,21 @@ export class AuthAPI {
    * Get current user profile
    * 
    * @returns Promise<User>
+   * 
+   * Note: Supports both /auth/profile and /auth/me endpoints
    */
   static async getProfile(): Promise<User> {
-    return handleApiCall(() =>
-      apiClient.get<ApiResponse<User>>('/auth/profile')
-    );
+    // Try /auth/me first (as per guide), fallback to /auth/profile
+    try {
+      return await handleApiCall(() =>
+        apiClient.get<ApiResponse<User>>('/auth/me')
+      );
+    } catch (error) {
+      // Fallback to /auth/profile if /auth/me fails
+      return handleApiCall(() =>
+        apiClient.get<ApiResponse<User>>('/auth/profile')
+      );
+    }
   }
 
   /**

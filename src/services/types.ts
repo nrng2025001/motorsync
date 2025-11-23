@@ -219,7 +219,6 @@ export enum BookingStatus {
   NO_SHOW = 'NO_SHOW',
   WAITLISTED = 'WAITLISTED',
   RESCHEDULED = 'RESCHEDULED',
-  BACK_ORDER = 'BACK_ORDER',
   APPROVED = 'APPROVED',
   REJECTED = 'REJECTED'
 }
@@ -267,6 +266,7 @@ export interface Booking {
   approvalDate?: string;
   stockAvailability?: StockAvailability;
   rtoDate?: string;
+  vahanDate?: string; // Phase 2: Vahan date capture
   advisorRemarks?: string;
   teamLeadRemarks?: string;
   salesManagerRemarks?: string;

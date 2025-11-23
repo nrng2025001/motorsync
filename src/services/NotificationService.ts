@@ -15,19 +15,19 @@ let Constants: any = null;
 
 try {
   Notifications = require('expo-notifications');
-} catch (error) {
+} catch (error: any) {
   console.log('⚠️ expo-notifications not available:', error.message);
 }
 
 try {
   Device = require('expo-device');
-} catch (error) {
+} catch (error: any) {
   console.log('⚠️ expo-device not available:', error.message);
 }
 
 try {
   Constants = require('expo-constants');
-} catch (error) {
+} catch (error: any) {
   console.log('⚠️ expo-constants not available:', error.message);
 }
 
@@ -74,7 +74,7 @@ class NotificationService {
       
       console.log('✅ Notification permission granted');
       return true;
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error requesting notification permission:', error);
       // For development builds that don't support expo-notifications, return true to allow app to continue
       if (error.message?.includes('ExpoPushTokenManager') || error.message?.includes('native module')) {
@@ -106,7 +106,7 @@ class NotificationService {
       console.log('🔑 Expo Push Token:', token.data);
       this.fcmToken = token.data;
       return token.data;
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error getting Expo push token:', error);
       // Return a mock token for development builds that don't support expo-notifications
       if (error.message?.includes('ExpoPushTokenManager') || error.message?.includes('native module') || error.message?.includes('expodevice') || error.message?.includes('Invalid or expired Firebase token')) {
@@ -178,7 +178,7 @@ class NotificationService {
         console.log('❌ Failed to remove FCM token:', response.status);
         return false;
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error removing FCM token:', error);
       return false;
     }
@@ -236,15 +236,17 @@ class NotificationService {
       }
 
       // Listen for notification received
-      Notifications.addNotificationReceivedListener(notification => {
+      Notifications.addNotificationReceivedListener((notification: any) => {
         console.log('📱 Notification received:', notification);
       });
 
       // Listen for notification response (when user taps notification)
-      Notifications.addNotificationResponseReceivedListener(response => {
+      // Phase 2: Handle escalation alerts
+      Notifications.addNotificationResponseReceivedListener((response: any) => {
         console.log('📱 Notification response:', response);
+        this.handleNotificationResponse(response);
       });
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error setting up notification listeners:', error);
     }
   }
@@ -269,7 +271,7 @@ class NotificationService {
         },
         trigger: null, // Show immediately
       });
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error showing local notification:', error);
     }
   }
@@ -293,7 +295,7 @@ class NotificationService {
         console.log('❌ Failed to send test notification:', response.status);
         return false;
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error sending test notification:', error);
       return false;
     }
@@ -304,6 +306,109 @@ class NotificationService {
    */
   getCurrentToken(): string | null {
     return this.fcmToken;
+  }
+
+  /**
+   * Phase 2: Handle notification response (when user taps notification)
+   * Handles escalation alerts and navigates to appropriate screens
+   */
+  private handleNotificationResponse(response: any): void {
+    try {
+      const notification = response?.notification;
+      const data = notification?.data || {};
+      const type = data.type || notification?.request?.content?.data?.type;
+
+      if (!type) {
+        console.log('⚠️ No notification type found');
+        return;
+      }
+
+      console.log('🔔 Handling notification type:', type);
+
+      // Phase 2: Handle escalation alerts
+      switch (type) {
+        case 'inactivity_alert':
+          // Enquiry has no updates for 5 days
+          if (data.entityId || data.enquiryId) {
+            this.navigateToEnquiry(data.entityId || data.enquiryId);
+          }
+          break;
+
+        case 'aging_alert':
+          // Enquiry is 20-25 days old
+          if (data.entityId || data.enquiryId) {
+            this.navigateToEnquiry(data.entityId || data.enquiryId);
+          }
+          break;
+
+        case 'aging_alert_sm':
+          // Enquiry is 30-35 days old (for Sales Manager)
+          if (data.entityId || data.enquiryId) {
+            this.navigateToEnquiry(data.entityId || data.enquiryId);
+          }
+          break;
+
+        case 'aging_alert_gm':
+          // Enquiry is 40+ days old (for General Manager)
+          if (data.entityId || data.enquiryId) {
+            this.navigateToEnquiry(data.entityId || data.enquiryId);
+          }
+          break;
+
+        case 'retail_delay':
+          // Booking not retailed within 15 days
+          if (data.entityId || data.bookingId) {
+            this.navigateToBooking(data.entityId || data.bookingId);
+          }
+          break;
+
+        default:
+          // Handle other notification types (enquiry, booking, etc.)
+          if (data.enquiryId) {
+            this.navigateToEnquiry(data.enquiryId);
+          } else if (data.bookingId) {
+            this.navigateToBooking(data.bookingId);
+          }
+          break;
+      }
+    } catch (error: any) {
+      console.error('❌ Error handling notification response:', error);
+    }
+  }
+
+  /**
+   * Navigate to enquiry details screen
+   * Uses event emitter pattern since NotificationService doesn't have direct navigation access
+   */
+  private navigateToEnquiry(enquiryId: string): void {
+    console.log('📍 Navigating to enquiry:', enquiryId);
+    // Emit event that can be listened to by navigation components
+    // The NotificationContext or App.tsx should listen to this and navigate
+    if (typeof window !== 'undefined' && (window as any).navigationRef) {
+      (window as any).navigationRef.current?.navigate('EnquiryDetails', { enquiryId });
+    } else {
+      // Fallback: Store navigation intent for later use
+      AsyncStorage.setItem('pendingNavigation', JSON.stringify({
+        screen: 'EnquiryDetails',
+        params: { enquiryId }
+      }));
+    }
+  }
+
+  /**
+   * Navigate to booking details screen
+   */
+  private navigateToBooking(bookingId: string): void {
+    console.log('📍 Navigating to booking:', bookingId);
+    if (typeof window !== 'undefined' && (window as any).navigationRef) {
+      (window as any).navigationRef.current?.navigate('BookingDetails', { bookingId });
+    } else {
+      // Fallback: Store navigation intent for later use
+      AsyncStorage.setItem('pendingNavigation', JSON.stringify({
+        screen: 'BookingDetails',
+        params: { bookingId }
+      }));
+    }
   }
 }
 

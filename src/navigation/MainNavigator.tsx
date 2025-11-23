@@ -26,6 +26,7 @@ import { StockScreen } from '../screens/stock/StockScreen';
 import { StockDetailScreen } from '../screens/stock/StockDetailScreen';
 import { AddEditStockScreen } from '../screens/stock/AddEditStockScreen';
 import AnalyticsScreen from '../screens/dashboard/AnalyticsScreen';
+import { TeamLeaderDashboardScreen } from '../screens/dashboard/TeamLeaderDashboardScreen';
 import { theme } from '../utils/theme';
 
 /**
@@ -172,6 +173,9 @@ function getScreenComponent(tabName: string) {
  * Wraps the tab navigator and can add modal screens
  */
 export function MainNavigator(): React.JSX.Element {
+  const { state: authState } = useAuth();
+  const userRole = getUserRole(authState.user);
+  
   return (
     <Stack.Navigator screenOptions={{ headerShown: false }}>
       <Stack.Screen name="MainTabs" component={MainTabNavigator} />

@@ -35,6 +35,7 @@ import Svg, { Path, Rect, Defs, LinearGradient, Stop, G, Ellipse, Circle } from 
 
 import { EnquiryCard } from '../../components/EnquiryCard';
 import { DownloadButton } from '../../components/DownloadButton';
+import { UploadButton } from '../../components/UploadButton';
 import * as EnquiryService from '../../services/enquiry.service';
 import { enquiryAPI } from '../../api/enquiries';
 import { Enquiry, EnquiryCategory, EnquiryStatus, EnquirySource, AutoBookingResponse } from '../../services/types';
@@ -269,11 +270,8 @@ export function EnquiriesScreen(): React.JSX.Element {
     try {
       if (showLoading) setLoading(true);
       
-      if (
-        !resolvedDealershipId ||
-        !resolvedDealershipCode ||
-        !isLikelyUuid(resolvedDealershipId)
-      ) {
+      // ✅ Allow both UUID and non-UUID dealership IDs (e.g., "default-dealership-001")
+      if (!resolvedDealershipId || !resolvedDealershipCode) {
         console.warn(
           '[EnquiriesScreen] Missing dealership context, skipping fetch until available',
           { resolvedDealershipId, resolvedDealershipCode }
@@ -283,7 +281,7 @@ export function EnquiriesScreen(): React.JSX.Element {
         return;
       }
 
-      // Fetch all enquiries without category filter
+      // Phase 2: Fetch enquiries - Auto-hide Booked/Lost by default (show only HOT/OPEN)
       console.log('🔄 [EnquiriesScreen] Fetching enquiries...');
       // Handle both possible structures: flat and nested
       const userData = (authState.user as any)?.user || authState.user;
@@ -303,12 +301,17 @@ export function EnquiriesScreen(): React.JSX.Element {
           ? 'team'
           : 'dealership';
 
-      if (selectedCategory !== 'ALL') {
-        requestParams.category = selectedCategory;
-      }
-
-      if (selectedStatus !== 'ALL') {
-        requestParams.status = selectedStatus;
+      // Phase 2: Default to HOT/OPEN if no category/status selected
+      if (selectedCategory === 'ALL' && selectedStatus === 'ALL') {
+        requestParams.category = EnquiryCategory.HOT;
+        requestParams.status = EnquiryStatus.OPEN;
+      } else {
+        if (selectedCategory !== 'ALL') {
+          requestParams.category = selectedCategory;
+        }
+        if (selectedStatus !== 'ALL') {
+          requestParams.status = selectedStatus;
+        }
       }
 
       const response = await enquiryAPI.getEnquiries(requestParams);
@@ -769,15 +772,12 @@ export function EnquiriesScreen(): React.JSX.Element {
                 Hot Enquiry Overview
               </Text>
               <Text variant="bodyMedium" style={styles.overviewSubtitle}>
-                TRACK &amp; MANAGE YOUR ENQUIRY
+                TRACK & MANAGE YOUR ENQUIRY
               </Text>
+              {/* Phase 2: Header format - Employee name, Dealership name, Employee code */}
               <View style={styles.userMeta}>
-                <Text style={styles.userMetaPrimary}>{authState.user?.name || 'Employee'}</Text>
-                <Text style={styles.userMetaSecondary}>
-                  {authState.user?.dealership?.name || 'Dealership'}
-                </Text>
-                <Text style={styles.userMetaSecondary}>
-                  Employee Code: {authState.user?.employeeId || '—'}
+                <Text style={styles.userMetaText}>
+                  {authState.user?.name || 'Employee'}, {authState.user?.dealership?.name || 'Dealership'}, {authState.user?.employeeId || 'Code: —'}
                 </Text>
               </View>
             </View>
@@ -786,7 +786,7 @@ export function EnquiriesScreen(): React.JSX.Element {
             </View>
           </View>
           
-          {/* Download Button */}
+          {/* Download & Upload Buttons */}
           <View style={styles.downloadContainer}>
             <DownloadButton 
               type="enquiries" 
@@ -794,6 +794,29 @@ export function EnquiriesScreen(): React.JSX.Element {
               onDownloadComplete={(result) => console.log('Download completed', result)}
               style={styles.downloadButton}
             />
+            {/* Upload Button - Admin Only */}
+            {userRole === 'ADMIN' && (
+              <UploadButton
+                type="enquiries"
+                onUploadStart={() => {
+                  console.log('Upload started');
+                }}
+                onUploadComplete={(result) => {
+                  console.log('Upload completed', result);
+                  // Refresh enquiries after successful upload
+                  fetchEnquiries(true);
+                  Alert.alert(
+                    'Upload Successful',
+                    `Successfully uploaded ${result?.successfulRows || 0} enquiries.`,
+                    [{ text: 'OK' }]
+                  );
+                }}
+                onUploadError={(error) => {
+                  console.error('Upload error:', error);
+                }}
+                style={styles.uploadButton}
+              />
+            )}
           </View>
           
           {/* Stats Bar */}
@@ -992,20 +1015,16 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'flex-start',
-    marginBottom: 20,
+    marginBottom: spacing.lg,
   },
   headerIcon: {
     width: 48,
     height: 48,
-    borderRadius: 16,
+    borderRadius: borderRadius.lg,
     backgroundColor: '#EFF6FF',
     justifyContent: 'center',
     alignItems: 'center',
-    shadowColor: '#3B82F6',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-    elevation: 2,
+    ...shadows.small,
   },
   headerIconText: {
     fontSize: 24,
@@ -1026,8 +1045,8 @@ const styles = StyleSheet.create({
     letterSpacing: 1.2,
   },
   userMeta: {
-    marginTop: 14,
-    gap: 2,
+    marginTop: spacing.md,
+    gap: spacing.xs,
   },
   userMetaPrimary: {
     color: '#0F172A',
@@ -1042,13 +1061,14 @@ const styles = StyleSheet.create({
   statsBar: {
     flexDirection: 'row',
     backgroundColor: '#F8FAFC',
-    borderRadius: 16,
-    padding: 16,
-    marginTop: 4,
+    borderRadius: borderRadius.lg,
+    padding: spacing.md,
+    marginTop: spacing.xs,
     alignItems: 'center',
     justifyContent: 'space-between',
     borderWidth: 1,
-    borderColor: '#E2E8F0',
+    borderColor: '#E5E7EB',
+    ...shadows.small,
   },
   statItem: {
     flex: 1,
@@ -1059,14 +1079,16 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     color: '#0F172A',
     letterSpacing: -0.5,
+    lineHeight: 28,
   },
   statLabel: {
     fontSize: 12,
     fontWeight: '600',
     color: '#64748B',
-    marginTop: 2,
+    marginTop: spacing.xs,
     textTransform: 'uppercase',
     letterSpacing: 0.5,
+    lineHeight: 16,
   },
   statDivider: {
     width: 1,
@@ -1084,14 +1106,10 @@ const styles = StyleSheet.create({
   categoryTab: {
     minWidth: 100,
     height: 44,
-    borderRadius: 12,
-    paddingHorizontal: 20,
-    paddingVertical: 12,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.08,
-    shadowRadius: 6,
-    elevation: 2,
+    borderRadius: borderRadius.md,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.sm,
+    ...shadows.small,
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -1110,24 +1128,21 @@ const styles = StyleSheet.create({
     letterSpacing: -0.3,
   },
   searchAndTabsContainer: {
-    paddingHorizontal: 24,
-    marginTop: 20,
-    marginBottom: 16,
+    paddingHorizontal: spacing.lg,
+    marginTop: spacing.lg,
+    marginBottom: spacing.md,
   },
   searchContainer: {
-    marginBottom: 12,
+    marginBottom: spacing.sm,
   },
   searchBar: {
     elevation: 0,
     backgroundColor: '#FFFFFF',
-    borderRadius: 16,
+    borderRadius: borderRadius.lg,
     height: 54,
     borderWidth: 1.5,
-    borderColor: '#E2E8F0',
-    shadowColor: '#3B82F6',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.06,
-    shadowRadius: 12,
+    borderColor: '#E5E7EB',
+    ...shadows.small,
   },
   searchInput: {
     fontSize: 15,
@@ -1196,8 +1211,8 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    paddingVertical: 80,
-    paddingHorizontal: 40,
+    paddingVertical: spacing.xxxl * 1.25,
+    paddingHorizontal: spacing.xl,
   },
   emptyIconContainer: {
     width: 120,
@@ -1205,12 +1220,8 @@ const styles = StyleSheet.create({
     borderRadius: 60,
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 24,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.08,
-    shadowRadius: 16,
-    elevation: 4,
+    marginBottom: spacing.lg,
+    ...shadows.medium,
   },
   emptyIcon: {
     fontSize: 56,
@@ -1218,10 +1229,11 @@ const styles = StyleSheet.create({
   emptyTitle: {
     fontWeight: '800',
     color: '#0F172A',
-    marginBottom: 12,
+    marginBottom: spacing.sm,
     textAlign: 'center',
     fontSize: 22,
     letterSpacing: -0.5,
+    lineHeight: 28,
   },
   emptyMessage: {
     color: '#64748B',
@@ -1229,17 +1241,14 @@ const styles = StyleSheet.create({
     lineHeight: 24,
     fontSize: 16,
     fontWeight: '400',
-    marginBottom: 32,
+    marginBottom: spacing.xl,
+    paddingHorizontal: spacing.md,
   },
   emptyActionButton: {
-    paddingHorizontal: 32,
-    paddingVertical: 14,
-    borderRadius: 16,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.15,
-    shadowRadius: 12,
-    elevation: 4,
+    paddingHorizontal: spacing.xl,
+    paddingVertical: spacing.md,
+    borderRadius: borderRadius.lg,
+    ...shadows.medium,
   },
   emptyActionText: {
     color: '#FFFFFF',
@@ -1249,20 +1258,16 @@ const styles = StyleSheet.create({
   },
   fab: {
     position: 'absolute',
-    right: 24,
-    bottom: 24,
-    borderRadius: 20,
+    right: spacing.lg,
+    bottom: spacing.lg,
+    borderRadius: borderRadius.round,
     backgroundColor: '#3B82F6',
-    shadowColor: '#3B82F6',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.35,
-    shadowRadius: 16,
-    elevation: 10,
+    ...shadows.large,
   },
   snackbar: {
-    borderRadius: 12,
-    marginBottom: 16,
-    marginHorizontal: 16,
+    borderRadius: borderRadius.md,
+    marginBottom: spacing.md,
+    marginHorizontal: spacing.md,
   },
   snackbarSuccess: {
     backgroundColor: '#10B981',
@@ -1302,19 +1307,21 @@ const styles = StyleSheet.create({
     borderRadius: 20,
   },
   downloadContainer: {
-    marginTop: 16,
-    marginBottom: 8,
-    alignItems: 'flex-end',
+    flexDirection: 'row',
+    gap: spacing.sm,
+    alignItems: 'center',
+    marginTop: spacing.md,
+    marginBottom: spacing.sm,
   },
   downloadButton: {
+    flex: 1,
     backgroundColor: '#8B5CF6',
-    paddingHorizontal: 20,
-    paddingVertical: 12,
-    borderRadius: 8,
-    shadowColor: '#8B5CF6',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
-    shadowRadius: 4,
-    elevation: 3,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.sm,
+    borderRadius: borderRadius.md,
+    ...shadows.small,
+  },
+  uploadButton: {
+    flex: 1,
   },
 });

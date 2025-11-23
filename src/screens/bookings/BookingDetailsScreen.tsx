@@ -25,6 +25,7 @@ import { useAuth } from '../../context/AuthContext';
 import { getUserRole } from '../../utils/roleUtils';
 import { bookingAPI } from '../../api/bookings';
 import { type Booking, BookingStatus, StockAvailability } from '../../services/types';
+import { AuthAPI } from '../../api/auth';
 
 /**
  * Role to remarks field mapping
@@ -99,6 +100,11 @@ export function BookingDetailsScreen({ route, navigation }: any): React.JSX.Elem
     fileLoginDate: '',
     approvalDate: '',
   });
+  
+  // Assignment and audit log state
+  const [auditLogs, setAuditLogs] = useState<any[]>([]);
+  const [showAuditLog, setShowAuditLog] = useState(false);
+  const [loadingAuditLog, setLoadingAuditLog] = useState(false);
 
   /**
    * Fetch booking details
@@ -262,7 +268,6 @@ export function BookingDetailsScreen({ route, navigation }: any): React.JSX.Elem
       case 'NO_SHOW': return '#9E9E9E';
       case 'WAITLISTED': return '#FF5722';
       case 'RESCHEDULED': return '#607D8B';
-      case 'BACK_ORDER': return '#795548';
       case 'APPROVED': return '#00BCD4';
       case 'REJECTED': return '#E91E63';
       default: return '#9E9E9E';
@@ -280,6 +285,114 @@ export function BookingDetailsScreen({ route, navigation }: any): React.JSX.Elem
       case 'GENERAL_MANAGER': return 'General Manager';
       case 'ADMIN': return 'Admin';
       default: return role;
+    }
+  };
+
+  /**
+   * Handle booking assignment (for managers)
+   */
+  const handleAssignBooking = async () => {
+    if (!booking) return;
+    
+    try {
+      // Get available advisors
+      const usersResponse = await AuthAPI.getUsers();
+      const advisors = usersResponse.filter((user: any) => 
+        user.role?.name === 'CUSTOMER_ADVISOR' && user.isActive
+      );
+      
+      if (advisors.length === 0) {
+        Alert.alert('No Advisors', 'No active customer advisors found.');
+        return;
+      }
+      
+      // Create advisor selection options
+      const advisorOptions = advisors.map((advisor: any) => ({
+        text: `${advisor.name} (${advisor.employeeId || 'N/A'})`,
+        onPress: async () => {
+          try {
+            setUpdating(true);
+            console.log('🔄 Assigning booking to:', advisor.name);
+            await bookingAPI.assignBooking(booking.id, advisor.firebaseUid);
+            
+            // Refresh booking data
+            const response = await bookingAPI.getBookingById(booking.id);
+            const responseData = response.data as any;
+            const bookingData = responseData?.data?.booking || responseData?.booking || responseData;
+            setBooking(bookingData);
+            
+            Alert.alert('Success', `Booking assigned to ${advisor.name} successfully!`);
+          } catch (error: any) {
+            console.error('❌ Error assigning booking:', error);
+            Alert.alert(
+              'Error', 
+              `Failed to assign booking: ${error.message || 'Please try again.'}`
+            );
+          } finally {
+            setUpdating(false);
+          }
+        }
+      }));
+      
+      // Add unassign option if booking is already assigned
+      if (booking.advisorId) {
+        advisorOptions.push({
+          text: 'Unassign',
+          style: 'destructive' as const,
+          onPress: async () => {
+            try {
+              setUpdating(true);
+              await bookingAPI.unassignBooking(booking.id);
+              
+              // Refresh booking data
+              const response = await bookingAPI.getBookingById(booking.id);
+              const responseData = response.data as any;
+              const bookingData = responseData?.data?.booking || responseData?.booking || responseData;
+              setBooking(bookingData);
+              
+              Alert.alert('Success', 'Booking unassigned successfully!');
+            } catch (error: any) {
+              console.error('❌ Error unassigning booking:', error);
+              Alert.alert(
+                'Error', 
+                `Failed to unassign booking: ${error.message || 'Please try again.'}`
+              );
+            } finally {
+              setUpdating(false);
+            }
+          }
+        });
+      }
+      
+      Alert.alert(
+        'Assign Booking',
+        'Select an advisor to assign this booking to:',
+        advisorOptions
+      );
+    } catch (error: any) {
+      console.error('❌ Error fetching advisors:', error);
+      Alert.alert('Error', 'Failed to load advisors. Please try again.');
+    }
+  };
+
+  /**
+   * Fetch booking audit log
+   */
+  const fetchAuditLog = async () => {
+    if (!booking) return;
+    
+    try {
+      setLoadingAuditLog(true);
+      const response = await bookingAPI.getBookingAuditLog(booking.id);
+      const responseData = response.data as any;
+      const logs = responseData?.data?.auditLogs || responseData?.auditLogs || [];
+      setAuditLogs(logs);
+      setShowAuditLog(true);
+    } catch (error: any) {
+      console.error('❌ Error fetching audit log:', error);
+      Alert.alert('Error', 'Failed to load audit log. Please try again.');
+    } finally {
+      setLoadingAuditLog(false);
     }
   };
 
@@ -587,6 +700,16 @@ export function BookingDetailsScreen({ route, navigation }: any): React.JSX.Elem
               </View>
             )}
             
+            {/* Phase 2: Vahan Date */}
+            {booking.vahanDate && (
+              <View style={styles.infoRow}>
+                <Text style={styles.infoLabel}>Vahan Date:</Text>
+                <Text style={styles.infoValue}>
+                  {new Date(booking.vahanDate).toLocaleDateString()}
+                </Text>
+              </View>
+            )}
+            
             <View style={styles.infoRow}>
               <Text style={styles.infoLabel}>
                 {booking.stockAvailability === StockAvailability.VEHICLE_AVAILABLE
@@ -834,6 +957,107 @@ export function BookingDetailsScreen({ route, navigation }: any): React.JSX.Elem
           </Card.Content>
         </Card>
 
+        {/* Booking Assignment (Managers Only) */}
+        {['TEAM_LEAD', 'SALES_MANAGER', 'GENERAL_MANAGER', 'ADMIN'].includes(userRole) && (
+          <Card style={styles.section}>
+            <Card.Content>
+              <Text variant="titleLarge" style={styles.sectionTitle}>
+                <Icon source="account-switch" size={20} /> Assignment
+              </Text>
+              <Divider style={styles.divider} />
+              
+              <View style={styles.infoRow}>
+                <Text style={styles.infoLabel}>Assigned Advisor:</Text>
+                <Text style={styles.infoValue}>
+                  {booking.advisorId ? (booking as any).advisor?.name || 'Assigned' : 'Not assigned'}
+                </Text>
+              </View>
+              
+              {booking.advisorId && (booking as any).advisor && (
+                <View style={styles.infoRow}>
+                  <Text style={styles.infoLabel}>Advisor Email:</Text>
+                  <Text style={styles.infoValue}>
+                    {(booking as any).advisor.email || 'N/A'}
+                  </Text>
+                </View>
+              )}
+              
+              <Button 
+                mode="contained" 
+                onPress={handleAssignBooking}
+                loading={updating}
+                disabled={updating}
+                icon="account-switch"
+                style={styles.updateButton}
+              >
+                {booking.advisorId ? 'Reassign Advisor' : 'Assign Advisor'}
+              </Button>
+            </Card.Content>
+          </Card>
+        )}
+
+        {/* Audit Log (Managers Only) */}
+        {['TEAM_LEAD', 'SALES_MANAGER', 'GENERAL_MANAGER', 'ADMIN'].includes(userRole) && (
+          <Card style={styles.section}>
+            <Card.Content>
+              <View style={styles.sectionHeader}>
+                <Text variant="titleLarge" style={styles.sectionTitle}>
+                  <Icon source="history" size={20} /> Change History
+                </Text>
+                <Button 
+                  mode="outlined" 
+                  onPress={fetchAuditLog}
+                  loading={loadingAuditLog}
+                  disabled={loadingAuditLog}
+                  icon="history"
+                  compact
+                >
+                  {showAuditLog ? 'Refresh' : 'View History'}
+                </Button>
+              </View>
+              <Divider style={styles.divider} />
+              
+              {showAuditLog ? (
+                auditLogs.length > 0 ? (
+                  <View>
+                    {auditLogs.map((log, index) => (
+                      <View key={log.id || index} style={styles.auditLogItem}>
+                        <View style={styles.auditLogHeader}>
+                          <Text style={styles.auditLogAction}>{log.action}</Text>
+                          <Text style={styles.auditLogDate}>
+                            {new Date(log.createdAt).toLocaleString()}
+                          </Text>
+                        </View>
+                        <Text style={styles.auditLogUser}>
+                          By: {log.user?.name || log.changedBy} ({log.user?.role?.name || 'Unknown'})
+                        </Text>
+                        {log.oldValue && log.newValue && (
+                          <View style={styles.auditLogChange}>
+                            <Text style={styles.auditLogChangeLabel}>Changed:</Text>
+                            <Text style={styles.auditLogChangeText}>
+                              {JSON.stringify(log.oldValue)} → {JSON.stringify(log.newValue)}
+                            </Text>
+                          </View>
+                        )}
+                        {log.changeReason && (
+                          <Text style={styles.auditLogReason}>
+                            Reason: {log.changeReason}
+                          </Text>
+                        )}
+                        {index < auditLogs.length - 1 && <Divider style={styles.auditLogDivider} />}
+                      </View>
+                    ))}
+                  </View>
+                ) : (
+                  <Text style={styles.noRemarksText}>No change history available.</Text>
+                )
+              ) : (
+                <Text style={styles.noRemarksText}>Click "View History" to see audit log.</Text>
+              )}
+            </Card.Content>
+          </Card>
+        )}
+
         {/* Booking Metadata */}
         <Card style={styles.section}>
           <Card.Content>
@@ -1067,5 +1291,54 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '600',
     textTransform: 'uppercase',
+  },
+  auditLogItem: {
+    paddingVertical: spacing.sm,
+  },
+  auditLogHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: spacing.xs,
+  },
+  auditLogAction: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: theme.colors.onSurface,
+  },
+  auditLogDate: {
+    fontSize: 12,
+    color: theme.colors.onSurfaceVariant,
+  },
+  auditLogUser: {
+    fontSize: 13,
+    color: theme.colors.onSurfaceVariant,
+    marginBottom: spacing.xs,
+  },
+  auditLogChange: {
+    marginTop: spacing.xs,
+    padding: spacing.sm,
+    backgroundColor: '#F5F5F5',
+    borderRadius: 8,
+  },
+  auditLogChangeLabel: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: theme.colors.onSurfaceVariant,
+    marginBottom: spacing.xs,
+  },
+  auditLogChangeText: {
+    fontSize: 12,
+    color: theme.colors.onSurface,
+    fontFamily: 'monospace',
+  },
+  auditLogReason: {
+    fontSize: 12,
+    color: theme.colors.onSurfaceVariant,
+    fontStyle: 'italic',
+    marginTop: spacing.xs,
+  },
+  auditLogDivider: {
+    marginTop: spacing.sm,
   },
 });

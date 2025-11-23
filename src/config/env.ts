@@ -52,11 +52,19 @@ export function getConfig(): AppConfig {
     validateEnv();
   }
 
+  // For local development, set EXPO_PUBLIC_API_URL to your local IP:
+  // Example: EXPO_PUBLIC_API_URL=http://192.168.1.100:4000/api
+  // To find your local IP: ifconfig | grep "inet " | grep -v 127.0.0.1 (Mac/Linux)
+  // Or run 'npm run local-ip' in the backend directory
   const config: AppConfig = {
     apiUrl: process.env.EXPO_PUBLIC_API_URL || 'https://automotive-backend-frqe.onrender.com/api',
     backendUrl: process.env.EXPO_PUBLIC_BACKEND_URL || 'https://automotive-backend-frqe.onrender.com',
     environment: (process.env.EXPO_PUBLIC_APP_ENV as any) || 'development',
     debugMode: process.env.EXPO_PUBLIC_DEBUG_MODE === 'true' || __DEV__,
+    // Firebase Configuration
+    // IMPORTANT: Backend must use the SAME Firebase project for token validation
+    // Backend needs: FIREBASE_PROJECT_ID=car-dealership-app-9f2d5
+    // See FIREBASE_CONFIG_CHECK.md for verification steps
     firebase: {
       apiKey: process.env.EXPO_PUBLIC_FIREBASE_API_KEY || 'AIzaSyCY3Iw35gcZhVrG3ZUH2B3I2LHoVBwkALE',
       authDomain: process.env.EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN || 'car-dealership-app-9f2d5.firebaseapp.com',

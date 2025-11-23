@@ -76,8 +76,14 @@ class EnquiryAPI {
     return response.data || [];
   }
 
-  async updateCategory(id: string, category: EnquiryCategory): Promise<ApiResponse<Enquiry>> {
-    return apiClient.put(`/enquiries/${id}`, { category });
+  async updateCategory(id: string, category: EnquiryCategory, lostReason?: string): Promise<ApiResponse<Enquiry>> {
+    const updateData: any = { category };
+    // If marking as LOST, include lostReason (required by backend)
+    if (category === EnquiryCategory.LOST && lostReason) {
+      updateData.lostReason = lostReason;
+      updateData.caRemarks = lostReason; // Also send in caRemarks for compatibility
+    }
+    return apiClient.put(`/enquiries/${id}`, updateData);
   }
 
   async updateStatus(id: string, status: EnquiryStatus): Promise<ApiResponse<Enquiry>> {
@@ -202,6 +208,70 @@ class EnquiryAPI {
   // Get enquiry status summary
   async getEnquiryStatusSummary(): Promise<ApiResponse<any>> {
     return apiClient.get('/enquiries/status-summary');
+  }
+
+  // Bulk Import - Excel/CSV Upload for Enquiries
+  async uploadBulkEnquiries(file: any): Promise<ApiResponse<{
+    importId: string;
+    message: string;
+    totalRows: number;
+    validRows: number;
+    invalidRows: number;
+  }>> {
+    const formData = new FormData();
+    // Handle both file object (from DocumentPicker) and direct file
+    if (file.uri) {
+      // React Native file object from DocumentPicker
+      formData.append('file', {
+        uri: file.uri,
+        name: file.name || 'upload.xlsx',
+        type: file.type || file.mimeType || 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      } as any);
+    } else {
+      // Direct file (for web or other formats)
+      formData.append('file', file);
+    }
+    
+    return apiClient.post('/enquiries/import', formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data',
+      },
+      timeout: 30000, // 30 seconds for file uploads
+    });
+  }
+
+  // Get import progress
+  async getImportProgress(importId: string): Promise<ApiResponse<{
+    importId: string;
+    status: 'pending' | 'processing' | 'completed' | 'failed';
+    progress: number;
+    totalRows: number;
+    processedRows: number;
+    successfulRows: number;
+    failedRows: number;
+    errors?: Array<{ row: number; error: string }>;
+  }>> {
+    return apiClient.get(`/enquiries/imports/${importId}/progress`);
+  }
+
+  // Get import history
+  async getImportHistory(params?: {
+    page?: number;
+    limit?: number;
+  }): Promise<PaginatedResponse<{
+    importId: string;
+    status: string;
+    totalRows: number;
+    successfulRows: number;
+    failedRows: number;
+    createdAt: string;
+    completedAt?: string;
+  }>> {
+    const queryParams = new URLSearchParams();
+    if (params?.page) queryParams.append('page', params.page.toString());
+    if (params?.limit) queryParams.append('limit', params.limit.toString());
+
+    return apiClient.get(`/enquiries/imports?${queryParams.toString()}`);
   }
 }
 

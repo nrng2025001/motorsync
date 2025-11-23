@@ -374,7 +374,10 @@ export function NewEnquiryScreen(): React.JSX.Element {
       }
     }
 
-    if (formData.nextFollowUpDate) {
+    // Phase 2: Next Follow-up Date is now mandatory
+    if (!formData.nextFollowUpDate) {
+      newErrors.nextFollowUpDate = 'Next follow-up date is required';
+    } else {
       const selectedFollowUp = new Date(formData.nextFollowUpDate);
       const today = new Date();
       today.setHours(0, 0, 0, 0);
@@ -407,14 +410,16 @@ export function NewEnquiryScreen(): React.JSX.Element {
         model: formData.model || '',
         source: formData.source,
         expectedBookingDate: toDateOnly(formData.expectedBookingDate) || toDateOnly(todayISO)!,
-        category: EnquiryCategory.HOT, // Set default category to HOT
+        // Note: Category is set by backend - don't send it if backend enum doesn't support "HOT"
+        // category: EnquiryCategory.HOT, // Removed - let backend set default category
       };
 
       // Add optional fields if provided
       if (formData.customerEmail) requestData.customerEmail = formData.customerEmail;
       if (formData.color) requestData.color = formData.color;
       if (formData.location?.trim()) requestData.location = formData.location.trim();
-      if (formData.nextFollowUpDate) requestData.nextFollowUpDate = toDateOnly(formData.nextFollowUpDate);
+      // Phase 2: Next Follow-up Date is now mandatory
+      requestData.nextFollowUpDate = toDateOnly(formData.nextFollowUpDate) || toDateOnly(todayISO)!;
       if (formData.caRemarks) requestData.caRemarks = formData.caRemarks;
 
       const currentUserId =
@@ -819,7 +824,7 @@ export function NewEnquiryScreen(): React.JSX.Element {
             {errors.expectedBookingDate && <Text style={styles.errorText}>{errors.expectedBookingDate}</Text>}
 
             <DatePickerISO
-              label="Next Follow-up Date"
+              label="Next Follow-up Date *"
               value={formData.nextFollowUpDate}
               onChange={(date) => {
                 setFormData({ ...formData, nextFollowUpDate: date });

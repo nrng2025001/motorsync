@@ -10,13 +10,21 @@ export interface Activity {
 }
 
 export interface DashboardStats {
-  totalEnquiries: number;
-  totalBookings: number;
-  totalVehicles: number;
   totalEmployees: number;
-  pendingEnquiries: number;
-  pendingBookings: number;
-  lowStockVehicles: number;
+  activeEnquiries: number;
+  pendingQuotations: number;
+  totalBookings: number;
+  stockCount: number;
+  revenue: number;
+  enquiryStats: {
+    total: number;
+    byCategory: { HOT: number; LOST: number; BOOKED: number };
+    byStatus: { OPEN: number; CLOSED: number };
+  };
+  quotationStats: {
+    total: number;
+    byStatus: { PENDING: number; APPROVED: number; REJECTED: number };
+  };
 }
 
 export interface BookingPlanTodaySummary {
@@ -66,6 +74,44 @@ class DashboardAPI {
       apiClient.get<ApiResponse<BookingPlanTodaySummary>>('/dashboard/booking-plan/today', {
         params,
       })
+    );
+  }
+
+  // Phase 2: Team Leader Dashboard
+  static async getTeamLeaderDashboard(): Promise<{
+    teamSize: number;
+    totalHotInquiryCount: number;
+    pendingCAOnUpdate: number;
+    pendingEnquiriesToUpdate: number;
+    todaysBookingPlan: number;
+  }> {
+    return handleApiCall(() =>
+      apiClient.get<ApiResponse<{
+        teamSize: number;
+        totalHotInquiryCount: number;
+        pendingCAOnUpdate: number;
+        pendingEnquiriesToUpdate: number;
+        todaysBookingPlan: number;
+      }>>('/dashboard/team-leader')
+    );
+  }
+
+  // Phase 2: Bookings Funnel Math
+  static async getBookingsFunnel(): Promise<{
+    carryForward: number;
+    newThisMonth: number;
+    delivered: number;
+    lost: number;
+    actualLive: number;
+  }> {
+    return handleApiCall(() =>
+      apiClient.get<ApiResponse<{
+        carryForward: number;
+        newThisMonth: number;
+        delivered: number;
+        lost: number;
+        actualLive: number;
+      }>>('/dashboard/bookings/funnel')
     );
   }
 }

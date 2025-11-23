@@ -190,6 +190,7 @@ export function BookingUpdateScreen({ route }: BookingUpdateScreenProps): React.
     fileLoginDate?: string;
     approvalDate?: string;
     rtoDate?: string;
+    vahanDate?: string; // Phase 2: Vahan date
     advisorRemarks?: string;
     teamLeadRemarks?: string;
     salesManagerRemarks?: string;
@@ -265,6 +266,7 @@ export function BookingUpdateScreen({ route }: BookingUpdateScreenProps): React.
       fileLoginDate: bookingData.fileLoginDate || '',
       approvalDate: bookingData.approvalDate || '',
       rtoDate: bookingData.rtoDate || '',
+      vahanDate: bookingData.vahanDate || '', // Phase 2: Vahan date
       advisorRemarks: bookingData.advisorRemarks || '',
       teamLeadRemarks: bookingData.teamLeadRemarks || '',
       salesManagerRemarks: bookingData.salesManagerRemarks || '',
@@ -415,8 +417,26 @@ export function BookingUpdateScreen({ route }: BookingUpdateScreenProps): React.
         }
       }
 
-      // Use the comprehensive updateBooking API
-      const response = await bookingAPI.updateBooking(bookingId, updateData);
+      // For advisors, use updateBookingStatus endpoint for status/fields updates
+      // For managers, use updateBooking for remarks
+      let response;
+      if (userRole === 'CUSTOMER_ADVISOR') {
+        // Advisor-editable fields should use updateBookingStatus endpoint
+        const statusUpdateData: any = {};
+        if (updateData.status) statusUpdateData.status = updateData.status;
+        if (updateData.expectedDeliveryDate) statusUpdateData.expectedDeliveryDate = updateData.expectedDeliveryDate;
+        if (updateData.financeRequired !== undefined) statusUpdateData.financeRequired = updateData.financeRequired;
+        if (updateData.financerName) statusUpdateData.financerName = updateData.financerName;
+        if (updateData.advisorRemarks) statusUpdateData.advisorRemarks = updateData.advisorRemarks;
+        if (updateData.fileLoginDate) statusUpdateData.fileLoginDate = updateData.fileLoginDate;
+        if (updateData.approvalDate) statusUpdateData.approvalDate = updateData.approvalDate;
+        if (updateData.rtoDate) statusUpdateData.rtoDate = updateData.rtoDate;
+        
+        response = await bookingAPI.updateBookingStatus(bookingId, statusUpdateData);
+      } else {
+        // Use the comprehensive updateBooking API for managers (remarks only)
+        response = await bookingAPI.updateBooking(bookingId, updateData);
+      }
       
       // Update local booking state with the response data
       if (response?.data) {
@@ -910,6 +930,22 @@ export function BookingUpdateScreen({ route }: BookingUpdateScreenProps): React.
               label="RTO Date"
               value={formData.rtoDate}
               onChange={(date) => handleDateChange('rtoDate', date)}
+              style={styles.input}
+            />
+
+            {/* Phase 2: Vahan Date */}
+            <DatePickerISO
+              label="Vahan Date"
+              value={formData.vahanDate}
+              onChange={(date) => {
+                handleDateChange('vahanDate', date);
+                // Auto-update vahan date via API
+                if (date && booking?.id) {
+                  bookingAPI.updateVahanDate(booking.id, date).catch((err) => {
+                    console.error('Error updating vahan date:', err);
+                  });
+                }
+              }}
               style={styles.input}
             />
           </Card.Content>

@@ -20,7 +20,7 @@ import {
 } from 'react-native-paper';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { theme, spacing } from '../../utils/theme';
+import { theme, spacing, borderRadius } from '../../utils/theme';
 import { enquiryAPI } from '../../api/enquiries';
 import usersAPI from '../../api/users';
 import { type Enquiry, EnquiryStatus, EnquiryCategory, RemarkHistoryEntry } from '../../services/types';
@@ -160,133 +160,35 @@ const CategoryPicker = ({
   ];
 
   const handleCategorySelect = (category: EnquiryCategory) => {
+    // Phase 2: For LOST and BOOKED, show remarks input modal
     if (category === EnquiryCategory.LOST || category === EnquiryCategory.BOOKED) {
       setSelectedCategory(category);
       setShowRemarksInput(true);
     } else {
+      // For HOT category, change directly without remarks
       onCategoryChange(category);
     }
   };
 
-  const handleAddRemark = async () => {
-    if (!enquiry) return;
-
-    const trimmedRemark = remarkInput.trim();
-    if (!trimmedRemark) {
-      setRemarkError('Please enter a remark before submitting.');
-      return;
-    }
-
-    try {
-      setSubmittingRemark(true);
-      const newRemark = await remarksAPI.addEnquiryRemark(enquiry.id, trimmedRemark);
-      setRemarkHistory((prev) =>
-        [newRemark, ...prev].filter((entry) => !entry.cancelled).slice(0, 3)
-      );
-      setEnquiry((prev) =>
-        prev
-          ? {
-              ...prev,
-              remarkHistory: [newRemark, ...(prev.remarkHistory || [])],
-            }
-          : prev
-      );
-      setRemarkInput('');
-      setRemarkError(null);
-      Alert.alert('Success', 'Remark added successfully.');
-    } catch (err: any) {
-      console.error('❌ Error adding remark:', err);
-      setRemarkError(err.message || 'Failed to add remark. Please try again.');
-    } finally {
-      setSubmittingRemark(false);
-    }
-  };
-
   const handleConfirmRemarks = () => {
-    if (selectedCategory) {
-      onCategoryChange(selectedCategory, remarks);
-      setShowRemarksInput(false);
-      setRemarks('');
-      setSelectedCategory(null);
+    if (!selectedCategory) return;
+    
+    // Phase 2: If marking as LOST, reason is mandatory
+    if (selectedCategory === EnquiryCategory.LOST) {
+      if (!remarks || !remarks.trim()) {
+        Alert.alert(
+          'Reason Required',
+          'Please provide a reason when marking enquiry as LOST.',
+          [{ text: 'OK' }]
+        );
+        return;
+      }
     }
-  };
-
-  const currentUserId = useMemo(() => {
-    return (
-      (authState.user as any)?.firebaseUid ||
-      (authState.user as any)?.user?.firebaseUid ||
-      authState.user?.firebaseUid ||
-      authState.user?.id ||
-      ''
-    );
-  }, [authState.user]);
-
-  const currentUserRole = authState.user?.role?.name || '';
-
-  const canCancelRemark = (remark: RemarkHistoryEntry): boolean => {
-    if (!remark || remark.cancelled) return false;
-    if (!currentUserId) return false;
-
-    const elevatedRoles = ['ADMIN', 'GENERAL_MANAGER', 'SALES_MANAGER', 'TEAM_LEAD'];
-    if (elevatedRoles.includes(currentUserRole)) {
-      return true;
-    }
-
-    return remark.createdBy?.id === currentUserId;
-  };
-
-  const openCancelRemarkDialog = (remark: RemarkHistoryEntry) => {
-    setRemarkToCancel(remark);
-    setCancelReason('');
-    setCancelDialogVisible(true);
-  };
-
-  const handleCancelRemark = async () => {
-    if (!remarkToCancel) return;
-    const trimmedReason = cancelReason.trim();
-    if (!trimmedReason) {
-      Alert.alert('Cancellation Reason', 'Please provide a reason for cancelling this remark.');
-      return;
-    }
-
-    try {
-      setCancellingRemark(true);
-      await remarksAPI.cancelRemark(remarkToCancel.id, trimmedReason);
-
-      setRemarkHistory((prev) =>
-        prev.filter((entry) => entry.id !== remarkToCancel.id)
-      );
-
-      setEnquiry((prev) =>
-        prev
-          ? {
-              ...prev,
-              remarkHistory: (prev.remarkHistory || []).map((entry) =>
-                entry.id === remarkToCancel.id
-                  ? { ...entry, cancelled: true, cancellationReason: trimmedReason }
-                  : entry
-              ),
-            }
-          : prev
-      );
-
-      setCancelDialogVisible(false);
-      setRemarkToCancel(null);
-      setCancelReason('');
-      Alert.alert('Remark Cancelled', 'The remark has been cancelled successfully.');
-    } catch (err: any) {
-      console.error('❌ Error cancelling remark:', err);
-      Alert.alert('Error', err.message || 'Failed to cancel remark. Please try again.');
-    } finally {
-      setCancellingRemark(false);
-    }
-  };
-
-  const closeCancelDialog = () => {
-    if (cancellingRemark) return;
-    setCancelDialogVisible(false);
-    setRemarkToCancel(null);
-    setCancelReason('');
+    
+    onCategoryChange(selectedCategory, remarks.trim());
+    setShowRemarksInput(false);
+    setRemarks('');
+    setSelectedCategory(null);
   };
 
   return (
@@ -324,17 +226,22 @@ const CategoryPicker = ({
           <Card style={styles.remarksCard}>
             <Card.Content>
               <Text style={styles.remarksTitle}>
-                Why is this enquiry being marked as {selectedCategory}?
+                {selectedCategory === EnquiryCategory.LOST 
+                  ? 'Reason for Lost (Required)' 
+                  : `Why is this enquiry being marked as ${selectedCategory}?`}
               </Text>
               <View style={styles.remarksInput}>
                 <TextInput
                   mode="outlined"
-                  placeholder="Add remarks..."
+                  placeholder={selectedCategory === EnquiryCategory.LOST 
+                    ? "Enter reason for marking as LOST..." 
+                    : "Add remarks..."}
                   value={remarks}
                   onChangeText={setRemarks}
                   multiline
                   numberOfLines={3}
                   style={styles.remarksTextInput}
+                  label={selectedCategory === EnquiryCategory.LOST ? "Reason for Lost *" : "Remarks"}
                 />
               </View>
               <View style={styles.remarksActions}>
@@ -353,7 +260,7 @@ const CategoryPicker = ({
                   mode="contained"
                   onPress={handleConfirmRemarks}
                   style={styles.remarksConfirmButton}
-                  disabled={!remarks.trim()}
+                  disabled={!remarks.trim() || (selectedCategory === EnquiryCategory.LOST && !remarks.trim())}
                 >
                   Confirm
                 </Button>
@@ -386,19 +293,188 @@ export function EnquiryDetailsScreen({ route, navigation }: any): React.JSX.Elem
   const [cancelReason, setCancelReason] = useState('');
   const [remarkToCancel, setRemarkToCancel] = useState<RemarkHistoryEntry | null>(null);
 
+  // Helper functions for remark cancellation
+  const currentUserId = useMemo(() => {
+    return (
+      (authState.user as any)?.firebaseUid ||
+      (authState.user as any)?.user?.firebaseUid ||
+      authState.user?.firebaseUid ||
+      authState.user?.id ||
+      ''
+    );
+  }, [authState.user]);
+
+  const currentUserRole = authState.user?.role?.name || '';
+
+  const canCancelRemark = (remark: RemarkHistoryEntry): boolean => {
+    if (!remark || remark.cancelled) return false;
+    if (!currentUserId) return false;
+
+    const elevatedRoles = ['ADMIN', 'GENERAL_MANAGER', 'SALES_MANAGER', 'TEAM_LEAD'];
+    if (elevatedRoles.includes(currentUserRole)) {
+      return true;
+    }
+
+    return remark.createdBy?.id === currentUserId;
+  };
+
+  const openCancelRemarkDialog = (remark: RemarkHistoryEntry) => {
+    setRemarkToCancel(remark);
+    setCancelReason('');
+    setCancelDialogVisible(true);
+  };
+
+  /**
+   * Handle adding a new remark
+   */
+  const handleAddRemark = async () => {
+    if (!enquiry) return;
+
+    const trimmedRemark = remarkInput.trim();
+    if (!trimmedRemark) {
+      setRemarkError('Please enter a remark before submitting.');
+      return;
+    }
+
+    try {
+      setSubmittingRemark(true);
+      const newRemark = await remarksAPI.addEnquiryRemark(enquiry.id, trimmedRemark);
+      // Add new remark and filter to last 3 days
+      const threeDaysAgo = new Date();
+      threeDaysAgo.setDate(threeDaysAgo.getDate() - 3);
+      threeDaysAgo.setHours(0, 0, 0, 0);
+      
+      const updatedRemarks = [newRemark, ...remarkHistory]
+        .filter((entry) => {
+          if (entry.cancelled) return false;
+          const remarkDate = new Date(entry.createdAt);
+          return remarkDate >= threeDaysAgo;
+        })
+        .sort((a, b) => {
+          return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+        });
+      
+      setRemarkHistory(updatedRemarks);
+      setEnquiry((prev) =>
+        prev
+          ? {
+              ...prev,
+              remarkHistory: [newRemark, ...(prev.remarkHistory || [])],
+            }
+          : prev
+      );
+      setRemarkInput('');
+      setRemarkError(null);
+      Alert.alert('Success', 'Remark added successfully.');
+    } catch (err: any) {
+      console.error('❌ Error adding remark:', err);
+      setRemarkError(err.message || 'Failed to add remark. Please try again.');
+    } finally {
+      setSubmittingRemark(false);
+    }
+  };
+
+  /**
+   * Handle cancelling a remark
+   */
+  const handleCancelRemark = async () => {
+    if (!remarkToCancel) return;
+    const trimmedReason = cancelReason.trim();
+    if (!trimmedReason) {
+      Alert.alert('Cancellation Reason', 'Please provide a reason for cancelling this remark.');
+      return;
+    }
+
+    try {
+      setCancellingRemark(true);
+      await remarksAPI.cancelRemark(remarkToCancel.id, trimmedReason);
+
+      // Update remark history - filter to last 3 days
+      const threeDaysAgo = new Date();
+      threeDaysAgo.setDate(threeDaysAgo.getDate() - 3);
+      threeDaysAgo.setHours(0, 0, 0, 0);
+
+      setRemarkHistory((prev) =>
+        prev
+          .filter((entry) => entry.id !== remarkToCancel.id)
+          .filter((entry) => {
+            if (entry.cancelled) return false;
+            const remarkDate = new Date(entry.createdAt);
+            return remarkDate >= threeDaysAgo;
+          })
+      );
+
+      setEnquiry((prev) =>
+        prev
+          ? {
+              ...prev,
+              remarkHistory: (prev.remarkHistory || []).map((entry) =>
+                entry.id === remarkToCancel.id
+                  ? { ...entry, cancelled: true, cancellationReason: trimmedReason }
+                  : entry
+              ),
+            }
+          : prev
+      );
+
+      setCancelDialogVisible(false);
+      setRemarkToCancel(null);
+      setCancelReason('');
+      Alert.alert('Remark Cancelled', 'The remark has been cancelled successfully.');
+    } catch (err: any) {
+      console.error('❌ Error cancelling remark:', err);
+      Alert.alert('Error', err.message || 'Failed to cancel remark. Please try again.');
+    } finally {
+      setCancellingRemark(false);
+    }
+  };
+
+  /**
+   * Close cancel dialog
+   */
+  const closeCancelDialog = () => {
+    if (cancellingRemark) return;
+    setCancelDialogVisible(false);
+    setRemarkToCancel(null);
+    setCancelReason('');
+  };
+
   console.log('🔍 EnquiryDetailsScreen mounted with route params:', route?.params);
   console.log('🔍 Enquiry ID from route:', enquiryId);
   console.log('🔍 Auth state:', authState);
 
   /**
    * Handle category change
+   * Phase 2: Added support for LOST reason and locked entry handling
    */
-  const handleCategoryChange = async (newCategory: EnquiryCategory, remarks?: string) => {
+  const handleCategoryChange = async (newCategory: EnquiryCategory, lostReason?: string) => {
     if (!enquiry) return;
+    
+    // Check if enquiry is closed (locked)
+    if (enquiry.status === EnquiryStatus.CLOSED) {
+      Alert.alert(
+        'Entry Locked',
+        'This enquiry is closed and cannot be updated.',
+        [{ text: 'OK' }]
+      );
+      return;
+    }
+    
+    // If marking as LOST, reason is mandatory
+    if (newCategory === EnquiryCategory.LOST) {
+      if (!lostReason || !lostReason.trim()) {
+        Alert.alert(
+          'Reason Required',
+          'Please provide a reason when marking enquiry as LOST.',
+          [{ text: 'OK' }]
+        );
+        return;
+      }
+    }
     
     setUpdating(true);
     try {
-      await enquiryAPI.updateCategory(enquiry.id, newCategory);
+      await enquiryAPI.updateCategory(enquiry.id, newCategory, lostReason);
       
       // Update local state
       setEnquiry(prev => prev ? { ...prev, category: newCategory } : null);
@@ -410,10 +486,26 @@ export function EnquiryDetailsScreen({ route, navigation }: any): React.JSX.Elem
       );
     } catch (error: any) {
       console.error('Error updating category:', error);
-      Alert.alert(
-        'Error', 
-        `Failed to update category: ${error.message || 'Please try again.'}`
-      );
+      
+      // Handle specific error cases
+      if (error.response?.status === 403 && error.response?.data?.message?.includes('locked')) {
+        Alert.alert(
+          'Entry Locked',
+          'This enquiry is closed and cannot be updated.',
+          [{ text: 'OK' }]
+        );
+      } else if (error.response?.status === 400 && error.response?.data?.message?.includes('Reason for lost')) {
+        Alert.alert(
+          'Reason Required',
+          error.response.data.message || 'Please provide a reason when marking enquiry as LOST.',
+          [{ text: 'OK' }]
+        );
+      } else {
+        Alert.alert(
+          'Error', 
+          error.response?.data?.message || error.message || 'Failed to update category. Please try again.'
+        );
+      }
     } finally {
       setUpdating(false);
     }
@@ -488,10 +580,45 @@ export function EnquiryDetailsScreen({ route, navigation }: any): React.JSX.Elem
         
         setEnquiry(enquiryData);
         if (Array.isArray(enquiryData.remarkHistory)) {
-          const latestRemarks = enquiryData.remarkHistory
-            .filter((entry: RemarkHistoryEntry) => !entry.cancelled)
-            .slice(0, 3);
-          setRemarkHistory(latestRemarks);
+          // Filter remarks from last 3 days, exclude cancelled, sort by date (newest first)
+          const threeDaysAgo = new Date();
+          threeDaysAgo.setDate(threeDaysAgo.getDate() - 3);
+          threeDaysAgo.setHours(0, 0, 0, 0);
+          
+          const filteredRemarks = enquiryData.remarkHistory
+            .filter((entry: RemarkHistoryEntry) => {
+              if (entry.cancelled) return false;
+              if (!entry.createdAt) return false; // Skip entries without dates
+              
+              try {
+                const remarkDate = new Date(entry.createdAt);
+                if (isNaN(remarkDate.getTime())) {
+                  console.warn('Invalid date in remark:', entry.createdAt);
+                  return false; // Skip invalid dates
+                }
+                return remarkDate >= threeDaysAgo;
+              } catch (error) {
+                console.warn('Error parsing remark date:', entry.createdAt, error);
+                return false;
+              }
+            })
+            .sort((a: RemarkHistoryEntry, b: RemarkHistoryEntry) => {
+              // Sort by date descending (newest first)
+              try {
+                const dateA = new Date(a.createdAt);
+                const dateB = new Date(b.createdAt);
+                
+                if (isNaN(dateA.getTime()) || isNaN(dateB.getTime())) {
+                  return 0; // Keep order if dates are invalid
+                }
+                
+                return dateB.getTime() - dateA.getTime();
+              } catch (error) {
+                return 0; // Keep order on error
+              }
+            });
+          
+          setRemarkHistory(filteredRemarks);
         } else {
           setRemarkHistory([]);
         }
@@ -671,16 +798,131 @@ export function EnquiryDetailsScreen({ route, navigation }: any): React.JSX.Elem
   /**
    * Format timestamp
    */
-  const formatTimestamp = (timestamp: string) => {
-    const date = new Date(timestamp);
-    return date.toLocaleDateString('en-US', {
-      year: 'numeric',
-      month: '2-digit',
-      day: '2-digit',
-      hour: '2-digit',
-      minute: '2-digit',
-      hour12: true,
+  const formatTimestamp = (timestamp: string | null | undefined) => {
+    if (!timestamp) return 'N/A';
+    
+    try {
+      const date = new Date(timestamp);
+      if (isNaN(date.getTime())) {
+        return 'Invalid date';
+      }
+      return date.toLocaleDateString('en-US', {
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: true,
+      });
+    } catch (error) {
+      console.warn('Error formatting timestamp:', timestamp, error);
+      return 'Invalid date';
+    }
+  };
+
+  /**
+   * Group remarks by day
+   */
+  const groupRemarksByDay = (remarks: RemarkHistoryEntry[]) => {
+    const grouped: { [key: string]: RemarkHistoryEntry[] } = {};
+    
+    remarks.forEach((remark) => {
+      if (!remark.createdAt) return; // Skip if no date
+      
+      try {
+        const date = new Date(remark.createdAt);
+        if (isNaN(date.getTime())) {
+          console.warn('Invalid date in remark:', remark.createdAt);
+          return; // Skip invalid dates
+        }
+        
+        date.setHours(0, 0, 0, 0); // Normalize to start of day
+        const dayKey = date.toISOString().split('T')[0]; // Use YYYY-MM-DD format
+        
+        if (!grouped[dayKey]) {
+          grouped[dayKey] = [];
+        }
+        grouped[dayKey].push(remark);
+      } catch (error) {
+        console.warn('Error processing remark date:', remark.createdAt, error);
+      }
     });
+    
+    // Sort days (newest first) - using ISO date strings
+    const sortedDays = Object.keys(grouped).sort((a, b) => {
+      return b.localeCompare(a); // ISO dates sort correctly as strings
+    });
+    
+    return { grouped, sortedDays };
+  };
+
+  /**
+   * Check if date is today
+   */
+  const isToday = (dateString: string | null | undefined): boolean => {
+    if (!dateString) return false;
+    
+    try {
+      const date = new Date(dateString);
+      if (isNaN(date.getTime())) return false;
+      
+      const today = new Date();
+      return (
+        date.getDate() === today.getDate() &&
+        date.getMonth() === today.getMonth() &&
+        date.getFullYear() === today.getFullYear()
+      );
+    } catch (error) {
+      return false;
+    }
+  };
+
+  /**
+   * Check if date is yesterday
+   */
+  const isYesterday = (dateString: string | null | undefined): boolean => {
+    if (!dateString) return false;
+    
+    try {
+      const date = new Date(dateString);
+      if (isNaN(date.getTime())) return false;
+      
+      const yesterday = new Date();
+      yesterday.setDate(yesterday.getDate() - 1);
+      return (
+        date.getDate() === yesterday.getDate() &&
+        date.getMonth() === yesterday.getMonth() &&
+        date.getFullYear() === yesterday.getFullYear()
+      );
+    } catch (error) {
+      return false;
+    }
+  };
+
+  /**
+   * Format day label
+   */
+  const formatDayLabel = (dayKey: string): string => {
+    if (!dayKey) return 'Unknown date';
+    
+    try {
+      // Check if it's today or yesterday
+      const testDate = new Date(dayKey);
+      if (isNaN(testDate.getTime())) {
+        return 'Invalid date';
+      }
+      
+      if (isToday(testDate.toISOString())) {
+        return 'Today';
+      }
+      if (isYesterday(testDate.toISOString())) {
+        return 'Yesterday';
+      }
+      return formatDate(dayKey, { day: 'numeric', month: 'short', year: 'numeric' });
+    } catch (error) {
+      console.warn('Error formatting day label:', dayKey, error);
+      return 'Invalid date';
+    }
   };
 
   // Show loading state
@@ -914,10 +1156,23 @@ export function EnquiryDetailsScreen({ route, navigation }: any): React.JSX.Elem
             Category Management
           </Text>
           
-          <CategoryPicker
-            currentCategory={enquiry.category}
-            onCategoryChange={handleCategoryChange}
-            disabled={updating}
+          {/* Phase 2: Show locked message for closed enquiries */}
+          {enquiry.status === 'CLOSED' ? (
+            <Card style={styles.lockedCard}>
+              <Card.Content>
+                <Text style={styles.lockedText}>
+                  This enquiry is closed and cannot be updated.
+                </Text>
+              </Card.Content>
+            </Card>
+          ) : (
+            <CategoryPicker
+              currentCategory={enquiry.category}
+              onCategoryChange={handleCategoryChange}
+              disabled={enquiry.status === 'CLOSED'}
+            />
+          )}
+            disabled={updating || enquiry.status === EnquiryStatus.CLOSED}
           />
 
           <Button
@@ -960,56 +1215,71 @@ export function EnquiryDetailsScreen({ route, navigation }: any): React.JSX.Elem
           </Button>
         </View>
 
-        {/* Recent Remarks */}
+        {/* Recent Remarks - Last 3 Days */}
         <Card style={styles.section}>
           <Card.Content>
             <Text variant="titleLarge" style={styles.sectionTitle}>
-              Recent Remarks
+              Recent Remarks (Last 3 Days)
             </Text>
 
             {remarkHistory.length === 0 ? (
               <View style={styles.remarkEmptyState}>
-                <Text style={styles.remarkEmptyText}>No remarks yet.</Text>
+                <Text style={styles.remarkEmptyText}>No remarks in the last 3 days.</Text>
               </View>
             ) : (
               <View style={styles.remarksList}>
-                {remarkHistory.map((remark, index) => (
-                  <View
-                    key={remark.id || `${remark.createdAt}-${index}`}
-                    style={[
-                      styles.remarkItem,
-                      index === remarkHistory.length - 1 && styles.remarkItemLast,
-                    ]}
-                  >
-                    <View style={styles.remarkHeaderRow}>
-                      <View>
-                        <Text style={styles.remarkAuthor}>
-                          {remark.createdBy?.name || 'Team Member'}
-                        </Text>
-                        {remark.createdBy?.role?.name && (
-                          <Text style={styles.remarkRole}>{remark.createdBy.role.name}</Text>
-                        )}
+                {(() => {
+                  const { grouped, sortedDays } = groupRemarksByDay(remarkHistory);
+                  return sortedDays.map((dayKey, dayIndex) => (
+                    <View key={dayKey} style={styles.remarkDayGroup}>
+                      {/* Day Header */}
+                      <View style={styles.remarkDayHeader}>
+                        <View style={styles.remarkDayHeaderLine} />
+                        <Text style={styles.remarkDayLabel}>{formatDayLabel(dayKey)}</Text>
+                        <View style={styles.remarkDayHeaderLine} />
                       </View>
-                      <Text style={styles.remarkTimestamp}>
-                        {formatDateTime(remark.createdAt)}
-                      </Text>
+                      
+                      {/* Remarks for this day */}
+                      {grouped[dayKey].map((remark, remarkIndex) => (
+                        <View
+                          key={remark.id || `${remark.createdAt}-${remarkIndex}`}
+                          style={[
+                            styles.remarkItem,
+                            remarkIndex === grouped[dayKey].length - 1 && dayIndex === sortedDays.length - 1 && styles.remarkItemLast,
+                          ]}
+                        >
+                          <View style={styles.remarkHeaderRow}>
+                            <View style={styles.remarkAuthorContainer}>
+                              <Text style={styles.remarkAuthor}>
+                                {remark.createdBy?.name || 'Team Member'}
+                              </Text>
+                              {remark.createdBy?.role?.name && (
+                                <Text style={styles.remarkRole}>{remark.createdBy.role.name}</Text>
+                              )}
+                            </View>
+                            <Text style={styles.remarkTimestamp}>
+                              {formatDateTime(remark.createdAt)}
+                            </Text>
+                          </View>
+                          <Text style={styles.remarkBody}>{remark.remark}</Text>
+                          {remark.cancelled && (
+                            <Text style={styles.remarkCancelled}>
+                              Cancelled{remark.cancellationReason ? `: ${remark.cancellationReason}` : ''}
+                            </Text>
+                          )}
+                          {!remark.cancelled && canCancelRemark(remark) && (
+                            <TouchableOpacity
+                              style={styles.remarkCancelButton}
+                              onPress={() => openCancelRemarkDialog(remark)}
+                            >
+                              <Text style={styles.remarkCancelButtonText}>Cancel Remark</Text>
+                            </TouchableOpacity>
+                          )}
+                        </View>
+                      ))}
                     </View>
-                    <Text style={styles.remarkBody}>{remark.remark}</Text>
-                    {remark.cancelled && (
-                      <Text style={styles.remarkCancelled}>
-                        Cancelled{remark.cancellationReason ? `: ${remark.cancellationReason}` : ''}
-                      </Text>
-                    )}
-                    {!remark.cancelled && canCancelRemark(remark) && (
-                      <TouchableOpacity
-                        style={styles.remarkCancelButton}
-                        onPress={() => openCancelRemarkDialog(remark)}
-                      >
-                        <Text style={styles.remarkCancelButtonText}>Cancel Remark</Text>
-                      </TouchableOpacity>
-                    )}
-                  </View>
-                ))}
+                  ));
+                })()}
               </View>
             )}
 
@@ -1211,6 +1481,19 @@ const styles = StyleSheet.create({
     color: theme.colors.onSurfaceVariant,
   },
   // Category Picker Styles
+  lockedCard: {
+    backgroundColor: '#FFF3CD',
+    borderWidth: 1,
+    borderColor: '#FFC107',
+    marginBottom: spacing.md,
+    borderRadius: borderRadius.md,
+  },
+  lockedText: {
+    color: '#856404',
+    fontSize: 14,
+    fontWeight: '500',
+    textAlign: 'center',
+  },
   categoryPickerContainer: {
     marginTop: spacing.md,
   },
@@ -1302,11 +1585,36 @@ const styles = StyleSheet.create({
   remarkItemLast: {
     borderBottomWidth: 0,
   },
+  remarkDayGroup: {
+    marginBottom: spacing.md,
+  },
+  remarkDayHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: spacing.md,
+    marginTop: spacing.sm,
+  },
+  remarkDayHeaderLine: {
+    flex: 1,
+    height: 1,
+    backgroundColor: '#E5E7EB',
+  },
+  remarkDayLabel: {
+    paddingHorizontal: spacing.md,
+    fontSize: 14,
+    fontWeight: '700',
+    color: theme.colors.primary,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
   remarkHeaderRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'flex-start',
     marginBottom: spacing.xs,
+  },
+  remarkAuthorContainer: {
+    flex: 1,
   },
   remarkAuthor: {
     fontWeight: '600',

@@ -109,6 +109,11 @@ class BookingAPI {
     return apiClient.put(`/bookings/${id}/update-status`, data);
   }
 
+  // Phase 2: Update Vahan Date
+  async updateVahanDate(id: string, vahanDate: string): Promise<ApiResponse<Booking>> {
+    return apiClient.put(`/bookings/${id}/vahan-date`, { vahanDate });
+  }
+
   async deleteBooking(id: string): Promise<ApiResponse<void>> {
     return apiClient.delete(`/bookings/${id}`);
   }
@@ -139,8 +144,33 @@ class BookingAPI {
     return apiClient.post('/bookings/auto-assign', { bookingIds, strategy });
   }
 
+  async assignBooking(bookingId: string, advisorId: string): Promise<ApiResponse<Booking>> {
+    return apiClient.patch(`/bookings/${bookingId}/assign`, { advisorId });
+  }
+
   async unassignBooking(bookingId: string): Promise<ApiResponse<Booking>> {
     return apiClient.patch(`/bookings/${bookingId}/unassign`, {});
+  }
+
+  async getBookingAuditLog(bookingId: string): Promise<ApiResponse<{
+    auditLogs: Array<{
+      id: string;
+      action: string;
+      changedBy: string;
+      user: {
+        name: string;
+        email: string;
+        role: { name: string };
+      };
+      oldValue: any;
+      newValue: any;
+      changeReason?: string;
+      ipAddress?: string;
+      userAgent?: string;
+      createdAt: Date;
+    }>;
+  }>> {
+    return apiClient.get(`/bookings/${bookingId}/audit`);
   }
 
   async uploadBulkBookings(file: any): Promise<BulkImportResponse> {
