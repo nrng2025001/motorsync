@@ -24,8 +24,12 @@ import { theme, spacing } from '../../utils/theme';
 import { useAuth } from '../../context/AuthContext';
 import { getUserRole } from '../../utils/roleUtils';
 import { bookingAPI } from '../../api/bookings';
-import { type Booking, BookingStatus, StockAvailability } from '../../services/types';
+import { type Booking, BookingStatus, StockAvailability, RemarkHistoryEntry } from '../../services/types';
 import { AuthAPI } from '../../api/auth';
+import { remarksAPI } from '../../api/remarks';
+import { Dialog, Portal } from 'react-native-paper';
+import { useMemo } from 'react';
+import { formatDateTime, formatDate } from '../../utils/formatting';
 
 /**
  * Role to remarks field mapping
@@ -90,7 +94,17 @@ export function BookingDetailsScreen({ route, navigation }: any): React.JSX.Elem
   const [error, setError] = useState<string | null>(null);
   const [updating, setUpdating] = useState(false);
   
-  // Editable fields state
+  // Phase 2: Timeline-based remarks (same as enquiry)
+  const [remarkHistory, setRemarkHistory] = useState<RemarkHistoryEntry[]>([]);
+  const [remarkInput, setRemarkInput] = useState('');
+  const [submittingRemark, setSubmittingRemark] = useState(false);
+  const [remarkError, setRemarkError] = useState<string | null>(null);
+  const [cancelDialogVisible, setCancelDialogVisible] = useState(false);
+  const [cancellingRemark, setCancellingRemark] = useState(false);
+  const [cancelReason, setCancelReason] = useState('');
+  const [remarkToCancel, setRemarkToCancel] = useState<RemarkHistoryEntry | null>(null);
+  
+  // Legacy editable fields state (kept for backward compatibility)
   const [editableRemarks, setEditableRemarks] = useState('');
   const [statusMenuVisible, setStatusMenuVisible] = useState(false);
   const [editingFinance, setEditingFinance] = useState(false);
@@ -105,6 +119,37 @@ export function BookingDetailsScreen({ route, navigation }: any): React.JSX.Elem
   const [auditLogs, setAuditLogs] = useState<any[]>([]);
   const [showAuditLog, setShowAuditLog] = useState(false);
   const [loadingAuditLog, setLoadingAuditLog] = useState(false);
+  
+  // Helper functions for remark cancellation (same as enquiry)
+  const currentUserId = useMemo(() => {
+    return (
+      (authState.user as any)?.firebaseUid ||
+      (authState.user as any)?.user?.firebaseUid ||
+      authState.user?.firebaseUid ||
+      authState.user?.id ||
+      ''
+    );
+  }, [authState.user]);
+
+  const currentUserRole = authState.user?.role?.name || '';
+
+  const canCancelRemark = (remark: RemarkHistoryEntry): boolean => {
+    if (!remark || remark.cancelled) return false;
+    if (!currentUserId) return false;
+
+    const elevatedRoles = ['ADMIN', 'GENERAL_MANAGER', 'SALES_MANAGER', 'TEAM_LEAD'];
+    if (elevatedRoles.includes(currentUserRole)) {
+      return true;
+    }
+
+    return remark.createdBy?.id === currentUserId;
+  };
+
+  const openCancelRemarkDialog = (remark: RemarkHistoryEntry) => {
+    setRemarkToCancel(remark);
+    setCancelReason('');
+    setCancelDialogVisible(true);
+  };
 
   /**
    * Fetch booking details
@@ -139,7 +184,30 @@ export function BookingDetailsScreen({ route, navigation }: any): React.JSX.Elem
         
         setBooking(bookingData);
         
-        // Initialize editable fields - extract clean remarks without timestamp
+        // Phase 2: Initialize timeline-based remarks (same as enquiry)
+        if (Array.isArray(bookingData.remarkHistory)) {
+          // Show last 3-5 remarks (chronological, not by date)
+          const filteredRemarks = bookingData.remarkHistory
+            .filter((entry: RemarkHistoryEntry) => !entry.cancelled)
+            .sort((a: RemarkHistoryEntry, b: RemarkHistoryEntry) => {
+              try {
+                const dateA = new Date(a.createdAt);
+                const dateB = new Date(b.createdAt);
+                if (isNaN(dateA.getTime()) || isNaN(dateB.getTime())) {
+                  return 0;
+                }
+                return dateB.getTime() - dateA.getTime();
+              } catch (error) {
+                return 0;
+              }
+            })
+            .slice(0, 5); // Show last 5 remarks
+          setRemarkHistory(filteredRemarks);
+        } else {
+          setRemarkHistory([]);
+        }
+        
+        // Legacy: Initialize editable fields - extract clean remarks without timestamp
         const userRemarksField = remarksFieldMap[userRole];
         const rawRemarks = (bookingData[userRemarksField] as string) || '';
         setEditableRemarks(extractCleanRemarks(rawRemarks));
@@ -164,7 +232,132 @@ export function BookingDetailsScreen({ route, navigation }: any): React.JSX.Elem
   }, [bookingId, userRole]);
 
   /**
-   * Update remarks based on user role
+   * Phase 2: Handle adding a new remark (same as enquiry)
+   */
+  const handleAddRemark = async () => {
+    if (!booking) return;
+
+    const trimmedRemark = remarkInput.trim();
+    if (!trimmedRemark) {
+      setRemarkError('Please enter a remark before submitting.');
+      return;
+    }
+
+    // Phase 2: Check 20 remark limit
+    const currentRemarkCount = (booking.remarkHistory || []).filter(r => !r.cancelled).length;
+    if (currentRemarkCount >= 20) {
+      Alert.alert(
+        'Limit Reached',
+        'Maximum 20 remarks allowed per booking. Please contact admin to remove old remarks.'
+      );
+      return;
+    }
+
+    try {
+      setSubmittingRemark(true);
+      const newRemark = await remarksAPI.addBookingRemark(booking.id, trimmedRemark);
+      
+      // Phase 2: Show last 3-5 remarks (chronological, not by date)
+      const updatedRemarks = [newRemark, ...remarkHistory]
+        .filter((entry) => !entry.cancelled)
+        .sort((a, b) => {
+          return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+        })
+        .slice(0, 5); // Show last 5 remarks
+      
+      setRemarkHistory(updatedRemarks);
+      setBooking((prev) =>
+        prev
+          ? {
+              ...prev,
+              remarkHistory: [newRemark, ...(prev.remarkHistory || [])],
+            }
+          : prev
+      );
+      setRemarkInput('');
+      setRemarkError(null);
+      Alert.alert('Success', 'Remark added successfully.');
+    } catch (err: any) {
+      console.error('❌ Error adding remark:', err);
+      const errorMessage = err.response?.data?.message || err.message || 'Failed to add remark. Please try again.';
+      
+      // Phase 2: Handle 20 remark limit error
+      if (errorMessage.includes('Maximum 20 remarks') || errorMessage.includes('remark limit')) {
+        Alert.alert(
+          'Limit Reached',
+          'Maximum 20 remarks allowed per booking. Please contact admin to remove old remarks.'
+        );
+      } else {
+        setRemarkError(errorMessage);
+      }
+    } finally {
+      setSubmittingRemark(false);
+    }
+  };
+
+  /**
+   * Phase 2: Handle cancelling a remark (same as enquiry)
+   */
+  const handleCancelRemark = async () => {
+    if (!remarkToCancel) return;
+    const trimmedReason = cancelReason.trim();
+    if (!trimmedReason) {
+      Alert.alert('Cancellation Reason', 'Please provide a reason for cancelling this remark.');
+      return;
+    }
+
+    try {
+      setCancellingRemark(true);
+      await remarksAPI.cancelRemark(remarkToCancel.id, trimmedReason);
+
+      // Phase 2: Update remark history - show last 3-5 remarks (chronological)
+      setRemarkHistory((prev) =>
+        prev
+          .filter((entry) => entry.id !== remarkToCancel.id)
+          .filter((entry) => !entry.cancelled)
+          .sort((a, b) => {
+            return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+          })
+          .slice(0, 5) // Show last 5 remarks
+      );
+
+      setBooking((prev) =>
+        prev
+          ? {
+              ...prev,
+              remarkHistory: (prev.remarkHistory || []).map((entry) =>
+                entry.id === remarkToCancel.id
+                  ? { ...entry, cancelled: true, cancellationReason: trimmedReason }
+                  : entry
+              ),
+            }
+          : prev
+      );
+
+      setCancelDialogVisible(false);
+      setRemarkToCancel(null);
+      setCancelReason('');
+      Alert.alert('Remark Cancelled', 'The remark has been cancelled successfully.');
+    } catch (err: any) {
+      console.error('❌ Error cancelling remark:', err);
+      Alert.alert('Error', err.message || 'Failed to cancel remark. Please try again.');
+    } finally {
+      setCancellingRemark(false);
+    }
+  };
+
+  /**
+   * Close cancel dialog
+   */
+  const closeCancelDialog = () => {
+    if (cancellingRemark) return;
+    setCancelDialogVisible(false);
+    setRemarkToCancel(null);
+    setCancelReason('');
+  };
+
+  /**
+   * Legacy: Update remarks based on user role (kept for backward compatibility)
    */
   const handleUpdateRemarks = async () => {
     if (!booking) return;
@@ -197,6 +390,91 @@ export function BookingDetailsScreen({ route, navigation }: any): React.JSX.Elem
     } finally {
       setUpdating(false);
     }
+  };
+
+  /**
+   * Phase 2: Helper functions for remarks display (same as enquiry)
+   */
+  const isToday = (dateString: string | null | undefined): boolean => {
+    if (!dateString) return false;
+    try {
+      const date = new Date(dateString);
+      if (isNaN(date.getTime())) return false;
+      const today = new Date();
+      return (
+        date.getDate() === today.getDate() &&
+        date.getMonth() === today.getMonth() &&
+        date.getFullYear() === today.getFullYear()
+      );
+    } catch (error) {
+      return false;
+    }
+  };
+
+  const isYesterday = (dateString: string | null | undefined): boolean => {
+    if (!dateString) return false;
+    try {
+      const date = new Date(dateString);
+      if (isNaN(date.getTime())) return false;
+      const yesterday = new Date();
+      yesterday.setDate(yesterday.getDate() - 1);
+      return (
+        date.getDate() === yesterday.getDate() &&
+        date.getMonth() === yesterday.getMonth() &&
+        date.getFullYear() === yesterday.getFullYear()
+      );
+    } catch (error) {
+      return false;
+    }
+  };
+
+  const formatDayLabel = (dayKey: string): string => {
+    if (!dayKey) return 'Unknown date';
+    try {
+      const testDate = new Date(dayKey);
+      if (isNaN(testDate.getTime())) {
+        return 'Invalid date';
+      }
+      if (isToday(testDate.toISOString())) {
+        return 'Today';
+      }
+      if (isYesterday(testDate.toISOString())) {
+        return 'Yesterday';
+      }
+      return formatDate(dayKey, { day: 'numeric', month: 'short', year: 'numeric' });
+    } catch (error) {
+      console.warn('Error formatting day label:', dayKey, error);
+      return 'Invalid date';
+    }
+  };
+
+  const groupRemarksByDay = (remarks: RemarkHistoryEntry[]) => {
+    const grouped: { [key: string]: RemarkHistoryEntry[] } = {};
+    
+    remarks.forEach((remark) => {
+      if (!remark.createdAt) return;
+      try {
+        const date = new Date(remark.createdAt);
+        if (isNaN(date.getTime())) {
+          console.warn('Invalid date in remark:', remark.createdAt);
+          return;
+        }
+        date.setHours(0, 0, 0, 0);
+        const dayKey = date.toISOString().split('T')[0];
+        if (!grouped[dayKey]) {
+          grouped[dayKey] = [];
+        }
+        grouped[dayKey].push(remark);
+      } catch (error) {
+        console.warn('Error processing remark date:', remark.createdAt, error);
+      }
+    });
+    
+    const sortedDays = Object.keys(grouped).sort((a, b) => {
+      return b.localeCompare(a);
+    });
+    
+    return { grouped, sortedDays };
   };
 
   /**
@@ -725,235 +1003,100 @@ export function BookingDetailsScreen({ route, navigation }: any): React.JSX.Elem
           </Card.Content>
         </Card>
 
-        {/* ROLE-SPECIFIC REMARKS - All Visible, Only Own Editable */}
+        {/* Phase 2: Timeline-based Remarks (same as enquiry) */}
         <Card style={styles.section}>
           <Card.Content>
             <Text variant="titleLarge" style={styles.sectionTitle}>
-              <Icon source="comment-text" size={20} /> Remarks by Role
+              Recent Remarks (Last 3-5)
             </Text>
-            <Divider style={styles.divider} />
-            
-            {/* Customer Advisor Remarks */}
-            {userRole === 'CUSTOMER_ADVISOR' ? (
-              <View style={[styles.remarksSection, styles.editableRemarksSection]}>
-                <Text style={styles.roleLabel}>
-                  <Icon source="account-tie" size={16} /> Customer Advisor (You):
-                </Text>
-                <TextInput
-                  value={editableRemarks}
-                  onChangeText={setEditableRemarks}
-                  placeholder="Add your remarks here..."
-                  multiline
-                  numberOfLines={4}
-                  style={styles.remarksInput}
-                  mode="outlined"
-                />
-                <Button 
-                  mode="contained" 
-                  onPress={handleUpdateRemarks}
-                  loading={updating}
-                  disabled={updating}
-                  style={styles.updateButton}
-                >
-                  Update My Remarks
-                </Button>
+
+            {remarkHistory.length === 0 ? (
+              <View style={styles.remarkEmptyState}>
+                <Text style={styles.remarkEmptyText}>No remarks yet.</Text>
               </View>
             ) : (
-              booking.advisorRemarks && (
-                <View style={styles.remarksSection}>
-                  <View style={styles.remarksHeader}>
-                    <Text style={styles.roleLabel}>
-                      <Icon source="account-tie" size={16} /> Customer Advisor:
-                    </Text>
-                    {extractTimestampFromRemarks(booking.advisorRemarks) && (
-                      <Text style={styles.remarksTimestamp}>
-                        {extractTimestampFromRemarks(booking.advisorRemarks)}
-                      </Text>
-                    )}
-                  </View>
-                  <Text style={styles.remarksText}>{extractCleanRemarks(booking.advisorRemarks)}</Text>
-                </View>
-              )
-            )}
-
-            {/* Team Lead Remarks */}
-            {userRole === 'TEAM_LEAD' ? (
-              <View style={[styles.remarksSection, styles.editableRemarksSection]}>
-                <Text style={styles.roleLabel}>
-                  <Icon source="account-supervisor" size={16} /> Team Lead (You):
-                </Text>
-                <TextInput
-                  value={editableRemarks}
-                  onChangeText={setEditableRemarks}
-                  placeholder="Add your remarks here..."
-                  multiline
-                  numberOfLines={4}
-                  style={styles.remarksInput}
-                  mode="outlined"
-                />
-                <Button 
-                  mode="contained" 
-                  onPress={handleUpdateRemarks}
-                  loading={updating}
-                  disabled={updating}
-                  style={styles.updateButton}
-                >
-                  Update My Remarks
-                </Button>
+              <View style={styles.remarksList}>
+                {(() => {
+                  const { grouped, sortedDays } = groupRemarksByDay(remarkHistory);
+                  return sortedDays.map((dayKey, dayIndex) => (
+                    <View key={dayKey} style={styles.remarkDayGroup}>
+                      {/* Day Header */}
+                      <View style={styles.remarkDayHeader}>
+                        <View style={styles.remarkDayHeaderLine} />
+                        <Text style={styles.remarkDayLabel}>{formatDayLabel(dayKey)}</Text>
+                        <View style={styles.remarkDayHeaderLine} />
+                      </View>
+                      
+                      {/* Remarks for this day */}
+                      {grouped[dayKey].map((remark, remarkIndex) => (
+                        <View
+                          key={remark.id || `${remark.createdAt}-${remarkIndex}`}
+                          style={[
+                            styles.remarkItem,
+                            remarkIndex === grouped[dayKey].length - 1 && dayIndex === sortedDays.length - 1 && styles.remarkItemLast,
+                          ]}
+                        >
+                          <View style={styles.remarkHeaderRow}>
+                            <View style={styles.remarkAuthorContainer}>
+                              <Text style={styles.remarkAuthor}>
+                                {remark.createdBy?.name || 'Team Member'}
+                              </Text>
+                              {remark.createdBy?.role?.name && (
+                                <Text style={styles.remarkRole}>{remark.createdBy.role.name}</Text>
+                              )}
+                            </View>
+                            <Text style={styles.remarkTimestamp}>
+                              {formatDateTime(remark.createdAt)}
+                            </Text>
+                          </View>
+                          <Text style={styles.remarkBody}>{remark.remark}</Text>
+                          {remark.cancelled && (
+                            <Text style={styles.remarkCancelled}>
+                              Cancelled{remark.cancellationReason ? `: ${remark.cancellationReason}` : ''}
+                            </Text>
+                          )}
+                          {!remark.cancelled && canCancelRemark(remark) && (
+                            <TouchableOpacity
+                              style={styles.remarkCancelButton}
+                              onPress={() => openCancelRemarkDialog(remark)}
+                            >
+                              <Text style={styles.remarkCancelButtonText}>Cancel Remark</Text>
+                            </TouchableOpacity>
+                          )}
+                        </View>
+                      ))}
+                    </View>
+                  ));
+                })()}
               </View>
-            ) : (
-              booking.teamLeadRemarks && (
-                <View style={styles.remarksSection}>
-                  <View style={styles.remarksHeader}>
-                    <Text style={styles.roleLabel}>
-                      <Icon source="account-supervisor" size={16} /> Team Lead:
-                    </Text>
-                    {extractTimestampFromRemarks(booking.teamLeadRemarks) && (
-                      <Text style={styles.remarksTimestamp}>
-                        {extractTimestampFromRemarks(booking.teamLeadRemarks)}
-                      </Text>
-                    )}
-                  </View>
-                  <Text style={styles.remarksText}>{extractCleanRemarks(booking.teamLeadRemarks)}</Text>
-                </View>
-              )
             )}
 
-            {/* Sales Manager Remarks */}
-            {userRole === 'SALES_MANAGER' ? (
-              <View style={[styles.remarksSection, styles.editableRemarksSection]}>
-                <Text style={styles.roleLabel}>
-                  <Icon source="account-star" size={16} /> Sales Manager (You):
-                </Text>
-                <TextInput
-                  value={editableRemarks}
-                  onChangeText={setEditableRemarks}
-                  placeholder="Add your remarks here..."
-                  multiline
-                  numberOfLines={4}
-                  style={styles.remarksInput}
-                  mode="outlined"
-                />
-                <Button 
-                  mode="contained" 
-                  onPress={handleUpdateRemarks}
-                  loading={updating}
-                  disabled={updating}
-                  style={styles.updateButton}
-                >
-                  Update My Remarks
-                </Button>
-              </View>
-            ) : (
-              booking.salesManagerRemarks && (
-                <View style={styles.remarksSection}>
-                  <View style={styles.remarksHeader}>
-                    <Text style={styles.roleLabel}>
-                      <Icon source="account-star" size={16} /> Sales Manager:
-                    </Text>
-                    {extractTimestampFromRemarks(booking.salesManagerRemarks) && (
-                      <Text style={styles.remarksTimestamp}>
-                        {extractTimestampFromRemarks(booking.salesManagerRemarks)}
-                      </Text>
-                    )}
-                  </View>
-                  <Text style={styles.remarksText}>{extractCleanRemarks(booking.salesManagerRemarks)}</Text>
-                </View>
-              )
-            )}
+            <Divider style={styles.remarkDivider} />
 
-            {/* General Manager Remarks */}
-            {userRole === 'GENERAL_MANAGER' ? (
-              <View style={[styles.remarksSection, styles.editableRemarksSection]}>
-                <Text style={styles.roleLabel}>
-                  <Icon source="account-crown" size={16} /> General Manager (You):
-                </Text>
-                <TextInput
-                  value={editableRemarks}
-                  onChangeText={setEditableRemarks}
-                  placeholder="Add your remarks here..."
-                  multiline
-                  numberOfLines={4}
-                  style={styles.remarksInput}
-                  mode="outlined"
-                />
-                <Button 
-                  mode="contained" 
-                  onPress={handleUpdateRemarks}
-                  loading={updating}
-                  disabled={updating}
-                  style={styles.updateButton}
-                >
-                  Update My Remarks
-                </Button>
-              </View>
-            ) : (
-              booking.generalManagerRemarks && (
-                <View style={styles.remarksSection}>
-                  <View style={styles.remarksHeader}>
-                    <Text style={styles.roleLabel}>
-                      <Icon source="account-crown" size={16} /> General Manager:
-                    </Text>
-                    {extractTimestampFromRemarks(booking.generalManagerRemarks) && (
-                      <Text style={styles.remarksTimestamp}>
-                        {extractTimestampFromRemarks(booking.generalManagerRemarks)}
-                      </Text>
-                    )}
-                  </View>
-                  <Text style={styles.remarksText}>{extractCleanRemarks(booking.generalManagerRemarks)}</Text>
-                </View>
-              )
-            )}
-
-            {/* Admin Remarks */}
-            {userRole === 'ADMIN' ? (
-              <View style={[styles.remarksSection, styles.editableRemarksSection]}>
-                <Text style={styles.roleLabel}>
-                  <Icon source="shield-account" size={16} /> Admin (You):
-                </Text>
-                <TextInput
-                  value={editableRemarks}
-                  onChangeText={setEditableRemarks}
-                  placeholder="Add your remarks here..."
-                  multiline
-                  numberOfLines={4}
-                  style={styles.remarksInput}
-                  mode="outlined"
-                />
-                <Button 
-                  mode="contained" 
-                  onPress={handleUpdateRemarks}
-                  loading={updating}
-                  disabled={updating}
-                  style={styles.updateButton}
-                >
-                  Update My Remarks
-                </Button>
-              </View>
-            ) : (
-              booking.adminRemarks && (
-                <View style={styles.remarksSection}>
-                  <View style={styles.remarksHeader}>
-                    <Text style={styles.roleLabel}>
-                      <Icon source="shield-account" size={16} /> Admin:
-                    </Text>
-                    {extractTimestampFromRemarks(booking.adminRemarks) && (
-                      <Text style={styles.remarksTimestamp}>
-                        {extractTimestampFromRemarks(booking.adminRemarks)}
-                      </Text>
-                    )}
-                  </View>
-                  <Text style={styles.remarksText}>{extractCleanRemarks(booking.adminRemarks)}</Text>
-                </View>
-              )
-            )}
-
-            
-            {/* Show message if no remarks yet */}
-            {!booking.advisorRemarks && !booking.teamLeadRemarks && !booking.salesManagerRemarks && 
-             !booking.generalManagerRemarks && !booking.adminRemarks && userRole !== 'CUSTOMER_ADVISOR' && (
-              <Text style={styles.noRemarksText}>No remarks have been added yet.</Text>
-            )}
+            <View style={styles.remarkForm}>
+              <TextInput
+                label="Add a remark"
+                value={remarkInput}
+                onChangeText={(text) => {
+                  setRemarkInput(text);
+                  if (remarkError) setRemarkError(null);
+                }}
+                mode="outlined"
+                multiline
+                numberOfLines={3}
+                placeholder="Share an update or next step..."
+                style={styles.remarkInput}
+              />
+              {remarkError && <Text style={styles.remarkErrorText}>{remarkError}</Text>}
+              <Button
+                mode="contained"
+                onPress={handleAddRemark}
+                loading={submittingRemark}
+                disabled={submittingRemark || !remarkInput.trim()}
+              >
+                Add Remark
+              </Button>
+            </View>
           </Card.Content>
         </Card>
 
@@ -1104,6 +1247,35 @@ export function BookingDetailsScreen({ route, navigation }: any): React.JSX.Elem
           </Card.Content>
         </Card>
       </ScrollView>
+      
+      {/* Phase 2: Cancel Remark Dialog (same as enquiry) */}
+      <Portal>
+        <Dialog visible={cancelDialogVisible} onDismiss={closeCancelDialog}>
+          <Dialog.Title>Cancel Remark</Dialog.Title>
+          <Dialog.Content>
+            <Text style={styles.cancelDialogDescription}>
+              Provide a reason for cancelling this remark. This reason will be stored with the
+              remark history.
+            </Text>
+            <TextInput
+              mode="outlined"
+              label="Cancellation Reason"
+              value={cancelReason}
+              onChangeText={setCancelReason}
+              multiline
+              style={styles.cancelDialogInput}
+            />
+          </Dialog.Content>
+          <Dialog.Actions>
+            <Button onPress={closeCancelDialog} disabled={cancellingRemark}>
+              Dismiss
+            </Button>
+            <Button onPress={handleCancelRemark} loading={cancellingRemark} disabled={cancellingRemark}>
+              Submit
+            </Button>
+          </Dialog.Actions>
+        </Dialog>
+      </Portal>
     </SafeAreaView>
   );
 }
@@ -1340,5 +1512,116 @@ const styles = StyleSheet.create({
   },
   auditLogDivider: {
     marginTop: spacing.sm,
+  },
+  // Phase 2: Remark styles (same as enquiry)
+  remarksList: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    paddingVertical: spacing.sm,
+  },
+  remarkItem: {
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.lg,
+    borderBottomWidth: 1,
+    borderBottomColor: '#E5E7EB',
+  },
+  remarkItemLast: {
+    borderBottomWidth: 0,
+  },
+  remarkDayGroup: {
+    marginBottom: spacing.md,
+  },
+  remarkDayHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: spacing.md,
+    marginTop: spacing.sm,
+  },
+  remarkDayHeaderLine: {
+    flex: 1,
+    height: 1,
+    backgroundColor: '#E5E7EB',
+  },
+  remarkDayLabel: {
+    paddingHorizontal: spacing.md,
+    fontSize: 14,
+    fontWeight: '700',
+    color: theme.colors.primary,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  remarkHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    marginBottom: spacing.xs,
+  },
+  remarkAuthorContainer: {
+    flex: 1,
+  },
+  remarkAuthor: {
+    fontWeight: '600',
+    color: theme.colors.onSurface,
+  },
+  remarkRole: {
+    color: theme.colors.onSurfaceVariant,
+    fontSize: 12,
+  },
+  remarkTimestamp: {
+    color: theme.colors.onSurfaceVariant,
+    fontSize: 12,
+  },
+  remarkBody: {
+    color: theme.colors.onSurface,
+    lineHeight: 20,
+  },
+  remarkCancelButton: {
+    marginTop: spacing.xs,
+    alignSelf: 'flex-start',
+    paddingVertical: spacing.xs,
+    paddingHorizontal: spacing.sm,
+    borderRadius: 8,
+    backgroundColor: '#FEE2E2',
+  },
+  remarkCancelButtonText: {
+    color: '#B91C1C',
+    fontWeight: '600',
+    fontSize: 12,
+    letterSpacing: 0.2,
+  },
+  remarkCancelled: {
+    marginTop: spacing.xs,
+    color: theme.colors.error,
+    fontSize: 12,
+    fontStyle: 'italic',
+  },
+  remarkDivider: {
+    marginVertical: spacing.md,
+  },
+  remarkForm: {
+    gap: spacing.sm,
+  },
+  remarkInput: {
+    backgroundColor: '#FFFFFF',
+  },
+  remarkErrorText: {
+    color: theme.colors.error,
+    fontSize: 12,
+    marginLeft: 4,
+  },
+  cancelDialogDescription: {
+    marginBottom: spacing.md,
+    color: theme.colors.onSurfaceVariant,
+  },
+  cancelDialogInput: {
+    backgroundColor: '#FFFFFF',
+  },
+  remarkEmptyState: {
+    paddingVertical: spacing.md,
+    alignItems: 'center',
+  },
+  remarkEmptyText: {
+    color: theme.colors.onSurfaceVariant,
+    fontSize: 14,
   },
 });

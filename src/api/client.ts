@@ -48,23 +48,17 @@ apiClient.interceptors.request.use(
       // Get Firebase ID token from current user
       const user = auth.currentUser;
       
-      // ✅ Check if authenticated before making requests
-      if (!user) {
-        // Check if token exists in AsyncStorage as fallback
-        const token = await AsyncStorage.getItem('firebaseToken');
-        if (!token) {
-          if (__DEV__) {
-            console.log('⏭️  Skipping request - not authenticated:', config.url);
-          }
-          // Don't reject, just return config - let the request fail naturally
-          // This prevents 401 errors from being logged unnecessarily
-        }
-      }
+      let token: string | null = null;
       
+      // ✅ Try to get token from Firebase user first
       if (user) {
         // Force refresh token if it's close to expiration
-        const token = await user.getIdToken(true);
-        config.headers.Authorization = `Bearer ${token}`;
+        token = await user.getIdToken(true);
+        
+        // Store token in AsyncStorage for fallback
+        if (token) {
+          await AsyncStorage.setItem('firebaseToken', token);
+        }
         
         // Debug logging for token
         if (__DEV__) {
@@ -72,13 +66,35 @@ apiClient.interceptors.request.use(
           console.log('🔑 Token length:', token ? token.length : 0);
         }
       } else {
-        if (__DEV__) {
-          console.warn('⚠️ No Firebase user found for API request');
+        // ✅ Fallback: Check AsyncStorage for stored token
+        token = await AsyncStorage.getItem('firebaseToken');
+        
+        if (token) {
+          if (__DEV__) {
+            console.log('🔑 Using stored token from AsyncStorage');
+          }
+        } else {
+          if (__DEV__) {
+            console.log('⏭️  Skipping request - not authenticated:', config.url);
+            console.warn('⚠️ No Firebase user found for API request');
+          }
+          // Clear any stale auth data if no user and no token
+          await AsyncStorage.removeItem('@auth_token');
+          await AsyncStorage.removeItem('@auth_user');
+          await AsyncStorage.removeItem('userProfile');
         }
-        // Clear any stale auth data if no user
-        await AsyncStorage.removeItem('@auth_token');
-        await AsyncStorage.removeItem('@auth_user');
-        await AsyncStorage.removeItem('userProfile');
+      }
+      
+      // ✅ Attach token to request if available
+      if (token) {
+        config.headers.Authorization = `Bearer ${token}`;
+      } else {
+        // If no token available and this is not an auth endpoint, 
+        // the request will fail with 401 - this is expected behavior
+        // Components should wait for auth to be ready before making requests
+        if (__DEV__) {
+          console.warn('⚠️ Request made without auth token - will likely fail with 401');
+        }
       }
       
       // Log the request in development only

@@ -233,21 +233,14 @@ export function capitalizeWords(text: string): string {
     .join(' ');
 }
 
+// Phase 2: Backend now restricts to 5 source values only
+// Frontend labels must map to backend enum values
 const ENQUIRY_SOURCE_LABELS: Record<string, string> = {
-  WALK_IN: 'Walk In',
-  PHONE_CALL: 'Phone Call',
-  WEBSITE: 'Website',
-  DIGITAL: 'Digital',
-  SOCIAL_MEDIA: 'Social Media',
-  REFERRAL: 'Referral',
-  ADVERTISEMENT: 'Advertisement',
-  EMAIL: 'Email',
-  SHOWROOM_VISIT: 'Showroom Visit',
-  EVENT: 'Event',
-  BTL_ACTIVITY: 'BTL Activity',
-  WHATSAPP: 'WhatsApp',
-  OUTBOUND_CALL: 'Outbound Call',
-  OTHER: 'Other',
+  SHOWROOM_VISIT: 'Showroom Walk-in',  // Backend: SHOWROOM_VISIT
+  DIGITAL: 'Digital',                   // Backend: DIGITAL
+  BTL_ACTIVITY: 'BTL Activity',         // Backend: BTL_ACTIVITY
+  PHONE_CALL: 'Tele-in',                // Backend: PHONE_CALL
+  REFERRAL: 'Referral',                 // Backend: REFERRAL
 };
 
 /**

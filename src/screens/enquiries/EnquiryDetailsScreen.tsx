@@ -336,23 +336,28 @@ export function EnquiryDetailsScreen({ route, navigation }: any): React.JSX.Elem
       return;
     }
 
+    // Phase 2: Check 20 remark limit
+    const currentRemarkCount = (enquiry.remarkHistory || []).filter(r => !r.cancelled).length;
+    if (currentRemarkCount >= 20) {
+      Alert.alert(
+        'Limit Reached',
+        'Maximum 20 remarks allowed per enquiry. Please contact admin to remove old remarks.'
+      );
+      return;
+    }
+
     try {
       setSubmittingRemark(true);
       const newRemark = await remarksAPI.addEnquiryRemark(enquiry.id, trimmedRemark);
-      // Add new remark and filter to last 3 days
-      const threeDaysAgo = new Date();
-      threeDaysAgo.setDate(threeDaysAgo.getDate() - 3);
-      threeDaysAgo.setHours(0, 0, 0, 0);
       
+      // Phase 2: Show last 3-5 remarks (chronological, not by date)
+      // Backend returns last 5 remarks, just display them
       const updatedRemarks = [newRemark, ...remarkHistory]
-        .filter((entry) => {
-          if (entry.cancelled) return false;
-          const remarkDate = new Date(entry.createdAt);
-          return remarkDate >= threeDaysAgo;
-        })
+        .filter((entry) => !entry.cancelled)
         .sort((a, b) => {
           return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
-        });
+        })
+        .slice(0, 5); // Show last 5 remarks
       
       setRemarkHistory(updatedRemarks);
       setEnquiry((prev) =>
@@ -368,7 +373,17 @@ export function EnquiryDetailsScreen({ route, navigation }: any): React.JSX.Elem
       Alert.alert('Success', 'Remark added successfully.');
     } catch (err: any) {
       console.error('❌ Error adding remark:', err);
-      setRemarkError(err.message || 'Failed to add remark. Please try again.');
+      const errorMessage = err.response?.data?.message || err.message || 'Failed to add remark. Please try again.';
+      
+      // Phase 2: Handle 20 remark limit error
+      if (errorMessage.includes('Maximum 20 remarks') || errorMessage.includes('remark limit')) {
+        Alert.alert(
+          'Limit Reached',
+          'Maximum 20 remarks allowed per enquiry. Please contact admin to remove old remarks.'
+        );
+      } else {
+        setRemarkError(errorMessage);
+      }
     } finally {
       setSubmittingRemark(false);
     }
@@ -389,19 +404,15 @@ export function EnquiryDetailsScreen({ route, navigation }: any): React.JSX.Elem
       setCancellingRemark(true);
       await remarksAPI.cancelRemark(remarkToCancel.id, trimmedReason);
 
-      // Update remark history - filter to last 3 days
-      const threeDaysAgo = new Date();
-      threeDaysAgo.setDate(threeDaysAgo.getDate() - 3);
-      threeDaysAgo.setHours(0, 0, 0, 0);
-
+      // Phase 2: Update remark history - show last 3-5 remarks (chronological)
       setRemarkHistory((prev) =>
         prev
           .filter((entry) => entry.id !== remarkToCancel.id)
-          .filter((entry) => {
-            if (entry.cancelled) return false;
-            const remarkDate = new Date(entry.createdAt);
-            return remarkDate >= threeDaysAgo;
+          .filter((entry) => !entry.cancelled)
+          .sort((a, b) => {
+            return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
           })
+          .slice(0, 5) // Show last 5 remarks
       );
 
       setEnquiry((prev) =>
@@ -487,23 +498,33 @@ export function EnquiryDetailsScreen({ route, navigation }: any): React.JSX.Elem
     } catch (error: any) {
       console.error('Error updating category:', error);
       
-      // Handle specific error cases
-      if (error.response?.status === 403 && error.response?.data?.message?.includes('locked')) {
+      // Phase 2: Enhanced error handling for backend validation errors
+      const errorMessage = error.response?.data?.message || error.message || 'Failed to update category. Please try again.';
+      
+      if (error.response?.status === 403 || errorMessage.includes('locked') || errorMessage.includes('Cannot update booked/lost enquiry')) {
         Alert.alert(
           'Entry Locked',
-          'This enquiry is closed and cannot be updated.',
+          errorMessage.includes('Cannot update booked/lost enquiry')
+            ? 'This enquiry is locked. Only remarks can be added.'
+            : 'This enquiry is closed and cannot be updated.',
           [{ text: 'OK' }]
         );
-      } else if (error.response?.status === 400 && error.response?.data?.message?.includes('Reason for lost')) {
+      } else if (error.response?.status === 400 && (errorMessage.includes('Reason for lost') || errorMessage.includes('Reason for lost is required'))) {
         Alert.alert(
           'Reason Required',
-          error.response.data.message || 'Please provide a reason when marking enquiry as LOST.',
+          errorMessage || 'Please provide a reason when marking enquiry as LOST.',
+          [{ text: 'OK' }]
+        );
+      } else if (errorMessage.includes('not in stock')) {
+        Alert.alert(
+          'Stock Error',
+          'Vehicle variant is not in stock.',
           [{ text: 'OK' }]
         );
       } else {
         Alert.alert(
           'Error', 
-          error.response?.data?.message || error.message || 'Failed to update category. Please try again.'
+          errorMessage
         );
       }
     } finally {
@@ -580,28 +601,10 @@ export function EnquiryDetailsScreen({ route, navigation }: any): React.JSX.Elem
         
         setEnquiry(enquiryData);
         if (Array.isArray(enquiryData.remarkHistory)) {
-          // Filter remarks from last 3 days, exclude cancelled, sort by date (newest first)
-          const threeDaysAgo = new Date();
-          threeDaysAgo.setDate(threeDaysAgo.getDate() - 3);
-          threeDaysAgo.setHours(0, 0, 0, 0);
-          
+          // Phase 2: Show last 3-5 remarks (chronological, not by date)
+          // Backend returns last 5 remarks, just display them
           const filteredRemarks = enquiryData.remarkHistory
-            .filter((entry: RemarkHistoryEntry) => {
-              if (entry.cancelled) return false;
-              if (!entry.createdAt) return false; // Skip entries without dates
-              
-              try {
-                const remarkDate = new Date(entry.createdAt);
-                if (isNaN(remarkDate.getTime())) {
-                  console.warn('Invalid date in remark:', entry.createdAt);
-                  return false; // Skip invalid dates
-                }
-                return remarkDate >= threeDaysAgo;
-              } catch (error) {
-                console.warn('Error parsing remark date:', entry.createdAt, error);
-                return false;
-              }
-            })
+            .filter((entry: RemarkHistoryEntry) => !entry.cancelled) // Exclude cancelled remarks
             .sort((a: RemarkHistoryEntry, b: RemarkHistoryEntry) => {
               // Sort by date descending (newest first)
               try {
@@ -616,7 +619,8 @@ export function EnquiryDetailsScreen({ route, navigation }: any): React.JSX.Elem
               } catch (error) {
                 return 0; // Keep order on error
               }
-            });
+            })
+            .slice(0, 5); // Show last 5 remarks
           
           setRemarkHistory(filteredRemarks);
         } else {
@@ -1101,6 +1105,17 @@ export function EnquiryDetailsScreen({ route, navigation }: any): React.JSX.Elem
             Vehicle of Interest
           </Text>
 
+          {/* Phase 2: Read-only indicator for imported vehicle fields */}
+          {enquiry.isImportedFromQuotation && (
+            <Card style={{ marginBottom: 16, backgroundColor: '#FFF9E6', borderLeftWidth: 4, borderLeftColor: '#FFA500' }}>
+              <Card.Content>
+                <Text style={{ color: '#856404', fontSize: 12 }}>
+                  📋 Imported from Quotation CSV (Read-only)
+                </Text>
+              </Card.Content>
+            </Card>
+          )}
+
             <View style={styles.infoRow}>
               <View style={styles.iconContainer}>
                 <Icon source="car" size={20} color={theme.colors.onSurfaceVariant} />
@@ -1114,6 +1129,23 @@ export function EnquiryDetailsScreen({ route, navigation }: any): React.JSX.Elem
                 </Text>
               </View>
             </View>
+
+          {/* Phase 2: Fuel Type Field */}
+          {enquiry.fuelType && (
+            <View style={styles.infoRow}>
+              <View style={styles.iconContainer}>
+                <Icon source="fuel" size={20} color={theme.colors.onSurfaceVariant} />
+              </View>
+              <View style={styles.infoContent}>
+                <Text variant="bodySmall" style={styles.infoLabel}>
+                  Fuel Type
+                </Text>
+                <Text variant="bodyLarge" style={styles.infoValue}>
+                  {enquiry.fuelType}
+                </Text>
+              </View>
+            </View>
+          )}
 
           {enquiry.expectedBookingDate && (
             <View style={styles.infoRow}>
@@ -1156,12 +1188,14 @@ export function EnquiryDetailsScreen({ route, navigation }: any): React.JSX.Elem
             Category Management
           </Text>
           
-          {/* Phase 2: Show locked message for closed enquiries */}
-          {enquiry.status === 'CLOSED' ? (
+          {/* Phase 2: Show locked message for closed, booked, or lost enquiries */}
+          {enquiry.status === 'CLOSED' || enquiry.category === 'BOOKED' || enquiry.category === 'LOST' ? (
             <Card style={styles.lockedCard}>
               <Card.Content>
                 <Text style={styles.lockedText}>
-                  This enquiry is closed and cannot be updated.
+                  {enquiry.status === 'CLOSED' 
+                    ? 'This enquiry is closed and cannot be updated.'
+                    : `This enquiry is ${enquiry.category} and is locked. Only remarks can be added.`}
                 </Text>
               </Card.Content>
             </Card>
@@ -1169,11 +1203,9 @@ export function EnquiryDetailsScreen({ route, navigation }: any): React.JSX.Elem
             <CategoryPicker
               currentCategory={enquiry.category}
               onCategoryChange={handleCategoryChange}
-              disabled={enquiry.status === 'CLOSED'}
+              disabled={enquiry.status === 'CLOSED' || enquiry.category === 'BOOKED' || enquiry.category === 'LOST'}
             />
           )}
-            disabled={updating || enquiry.status === EnquiryStatus.CLOSED}
-          />
 
           <Button
             mode="outlined"

@@ -208,6 +208,7 @@ export function NewEnquiryScreen(): React.JSX.Element {
     model: '',
     variant: '',
     color: '',
+    fuelType: '', // Phase 2: NEW FIELD
     source: EnquirySource.SHOWROOM_VISIT,
     location: '',
     expectedBookingDate: todayISO,
@@ -234,6 +235,7 @@ export function NewEnquiryScreen(): React.JSX.Element {
   const [useManualVariant, setUseManualVariant] = useState(false);
   const [selectedModel, setSelectedModel] = useState<string | null>(null);
   const [selectedVariant, setSelectedVariant] = useState<string | null>(null);
+  const [fuelTypeMenuVisible, setFuelTypeMenuVisible] = useState(false);
 
   // Fetch models from backend with hardcoded fallback
   const fetchModels = async () => {
@@ -417,6 +419,7 @@ export function NewEnquiryScreen(): React.JSX.Element {
       // Add optional fields if provided
       if (formData.customerEmail) requestData.customerEmail = formData.customerEmail;
       if (formData.color) requestData.color = formData.color;
+      if (formData.fuelType) requestData.fuelType = formData.fuelType; // Phase 2: NEW FIELD
       if (formData.location?.trim()) requestData.location = formData.location.trim();
       // Phase 2: Next Follow-up Date is now mandatory
       requestData.nextFollowUpDate = toDateOnly(formData.nextFollowUpDate) || toDateOnly(todayISO)!;
@@ -472,10 +475,21 @@ export function NewEnquiryScreen(): React.JSX.Element {
       );
     } catch (error: any) {
       console.error('Error creating enquiry:', error);
-      Alert.alert(
-        'Error',
-        error.message || 'Failed to create enquiry. Please try again.'
-      );
+      
+      // Phase 2: Enhanced error handling for backend validation errors
+      const errorMessage = error.response?.data?.message || error.message || 'Failed to create enquiry. Please try again.';
+      
+      if (errorMessage.includes('Invalid source')) {
+        Alert.alert('Invalid Source', 'Please select a valid source from the dropdown (Showroom Walk-in, Digital, BTL Activity, Tele-in, or Referral)');
+      } else if (errorMessage.includes('EDB') || errorMessage.includes('Expected booking date')) {
+        Alert.alert('Date Required', errorMessage);
+      } else if (errorMessage.includes('Follow-up date')) {
+        Alert.alert('Date Required', errorMessage);
+      } else if (errorMessage.includes('cannot be in the past')) {
+        Alert.alert('Invalid Date', errorMessage);
+      } else {
+        Alert.alert('Error', errorMessage);
+      }
     } finally {
       setLoading(false);
     }
@@ -796,6 +810,72 @@ export function NewEnquiryScreen(): React.JSX.Element {
                   title={color}
                 />
               ))}
+            </Menu>
+
+            {/* Phase 2: Fuel Type Field */}
+            <Menu
+              visible={fuelTypeMenuVisible}
+              onDismiss={() => setFuelTypeMenuVisible(false)}
+              anchor={
+                <TextInput
+                  label="Fuel Type (Optional)"
+                  value={formData.fuelType}
+                  mode="outlined"
+                  placeholder="Select fuel type"
+                  style={styles.input}
+                  left={<TextInput.Icon icon="fuel" />}
+                  right={
+                    <TextInput.Icon 
+                      icon="chevron-down" 
+                      onPress={() => setFuelTypeMenuVisible(true)} 
+                    />
+                  }
+                  editable={false}
+                />
+              }
+            >
+              <Menu.Item
+                onPress={() => {
+                  setFormData({ ...formData, fuelType: '' });
+                  setFuelTypeMenuVisible(false);
+                }}
+                title="No Selection"
+              />
+              <Menu.Item
+                onPress={() => {
+                  setFormData({ ...formData, fuelType: 'Petrol' });
+                  setFuelTypeMenuVisible(false);
+                }}
+                title="Petrol"
+              />
+              <Menu.Item
+                onPress={() => {
+                  setFormData({ ...formData, fuelType: 'Diesel' });
+                  setFuelTypeMenuVisible(false);
+                }}
+                title="Diesel"
+              />
+              <Menu.Item
+                onPress={() => {
+                  setFormData({ ...formData, fuelType: 'EV' });
+                  setFuelTypeMenuVisible(false);
+                }}
+                title="EV"
+              />
+              <Menu.Item
+                onPress={() => {
+                  setFormData({ ...formData, fuelType: 'CNG' });
+                  setFuelTypeMenuVisible(false);
+                }}
+                title="CNG"
+              />
+              <Menu.Item
+                onPress={() => {
+                  setFormData({ ...formData, fuelType: 'Petrol GDI' });
+                  setFuelTypeMenuVisible(false);
+                }}
+                title="Petrol GDI"
+              />
             </Menu>
           </Card.Content>
         </Card>

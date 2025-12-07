@@ -1,13 +1,17 @@
 /**
  * DatePickerISO Component
- * Date picker that returns ISO-8601 formatted dates for API compatibility
- * Fallback implementation for when native date picker is not available
+ * Calendar picker that returns ISO-8601 formatted dates for API compatibility
+ * Uses react-native-paper-dates Calendar component in a custom bottom sheet modal
+ * Opens as a bottom sheet (not full screen) for better UX
  */
 
-import React, { useState } from 'react';
-import { View, StyleSheet, Platform, TouchableOpacity, Modal, ScrollView } from 'react-native';
-import { Text, TextInput, HelperText, Button, Card } from 'react-native-paper';
+import React, { useState, useEffect } from 'react';
+import { View, StyleSheet, TouchableOpacity, Modal, Platform, Dimensions } from 'react-native';
+import { TextInput, HelperText, Portal, Button, Text } from 'react-native-paper';
+import { Calendar } from 'react-native-paper-dates';
 import { formatDateForAPI } from '../services/api.config';
+
+const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 
 interface DatePickerISOProps {
   label: string;
@@ -31,15 +35,28 @@ export function DatePickerISO({
   style,
 }: DatePickerISOProps): React.JSX.Element {
   const [showPicker, setShowPicker] = useState(false);
-  const [selectedDate, setSelectedDate] = useState<Date>(
-    value ? new Date(value) : new Date()
+  const [selectedDate, setSelectedDate] = useState<Date | undefined>(
+    value ? new Date(value) : undefined
   );
+
+  // Update selectedDate when value prop changes
+  useEffect(() => {
+    if (value) {
+      const date = new Date(value);
+      if (!isNaN(date.getTime())) {
+        setSelectedDate(date);
+      }
+    } else {
+      setSelectedDate(undefined);
+    }
+  }, [value]);
 
   const formatDisplayDate = (isoString?: string): string => {
     if (!isoString) return 'Select date';
     
     try {
       const date = new Date(isoString);
+      if (isNaN(date.getTime())) return 'Select date';
       return date.toLocaleDateString('en-IN', {
         day: '2-digit',
         month: 'long',
@@ -56,34 +73,27 @@ export function DatePickerISO({
     }
   };
 
+  const onDismiss = () => {
+    setShowPicker(false);
+  };
+
   const handleDateSelect = (date: Date) => {
     setSelectedDate(date);
-    const isoDate = formatDateForAPI(date);
-    onChange(isoDate);
-    setShowPicker(false);
   };
 
-  const handleCancel = () => {
-    setShowPicker(false);
-  };
-
-  // Generate date options (next 30 days)
-  const generateDateOptions = () => {
-    const options = [];
-    const today = new Date();
-    const maxDate = maximumDate || new Date(today.getTime() + 30 * 24 * 60 * 60 * 1000);
-    const minDate = minimumDate || today;
-    
-    for (let i = 0; i < 30; i++) {
-      const date = new Date(today.getTime() + i * 24 * 60 * 60 * 1000);
-      if (date >= minDate && date <= maxDate) {
-        options.push(date);
-      }
+  const handleConfirm = () => {
+    if (selectedDate) {
+      const isoDate = formatDateForAPI(selectedDate);
+      onChange(isoDate);
+      setShowPicker(false);
     }
-    return options;
   };
 
-  const dateOptions = generateDateOptions();
+  // Set default minimum date to today if not provided
+  const minDate = minimumDate || new Date();
+  
+  // Set default maximum date to 1 year from now if not provided
+  const maxDate = maximumDate || new Date(new Date().setFullYear(new Date().getFullYear() + 1));
 
   return (
     <View style={[styles.container, style]}>
@@ -106,54 +116,63 @@ export function DatePickerISO({
         </HelperText>
       )}
 
-      <Modal
-        visible={showPicker}
-        transparent={true}
-        animationType="slide"
-        onRequestClose={handleCancel}
-      >
-        <View style={styles.modalOverlay}>
-          <Card style={styles.modalCard}>
-            <Card.Content>
-              <Text variant="headlineSmall" style={styles.modalTitle}>
-                Select Date
-              </Text>
-              <ScrollView style={styles.dateList} showsVerticalScrollIndicator={false}>
-                {dateOptions.map((date, index) => (
-                  <TouchableOpacity
-                    key={index}
-                    style={[
-                      styles.dateOption,
-                      selectedDate.toDateString() === date.toDateString() && styles.selectedDateOption
-                    ]}
-                    onPress={() => handleDateSelect(date)}
-                  >
-                    <Text style={[
-                      styles.dateOptionText,
-                      selectedDate.toDateString() === date.toDateString() && styles.selectedDateOptionText
-                    ]}>
-                      {date.toLocaleDateString('en-IN', {
-                        weekday: 'long',
-                        day: '2-digit',
-                        month: 'long',
-                        year: 'numeric',
-                      })}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
-              </ScrollView>
-              <View style={styles.modalActions}>
-                <Button mode="outlined" onPress={handleCancel} style={styles.cancelButton}>
+      <Portal>
+        <Modal
+          visible={showPicker}
+          transparent={true}
+          animationType="slide"
+          onRequestClose={onDismiss}
+        >
+          <View style={styles.modalOverlay} onTouchEnd={onDismiss}>
+            <View style={styles.modalContent} onStartShouldSetResponder={() => true}>
+              {/* Header */}
+              <View style={styles.modalHeader}>
+                <Text variant="titleLarge" style={styles.modalTitle}>
+                  Select Date
+                </Text>
+                <Button onPress={onDismiss} textColor="#666" compact>
                   Cancel
                 </Button>
-                <Button mode="contained" onPress={() => handleDateSelect(selectedDate)} style={styles.confirmButton}>
+              </View>
+              
+              {/* Calendar */}
+              <View style={styles.calendarWrapper}>
+                <Calendar
+                  locale="en"
+                  mode="single"
+                  date={selectedDate}
+                  onSelect={handleDateSelect}
+                  validRange={{
+                    startDate: minDate,
+                    endDate: maxDate,
+                  }}
+                  startYear={minDate.getFullYear()}
+                  endYear={maxDate.getFullYear()}
+                />
+              </View>
+
+              {/* Action Buttons */}
+              <View style={styles.modalActions}>
+                <Button
+                  mode="outlined"
+                  onPress={onDismiss}
+                  style={styles.actionButton}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  mode="contained"
+                  onPress={handleConfirm}
+                  disabled={!selectedDate}
+                  style={styles.actionButton}
+                >
                   Select
                 </Button>
               </View>
-            </Card.Content>
-          </Card>
-        </View>
-      </Modal>
+            </View>
+          </View>
+        </Modal>
+      </Portal>
     </View>
   );
 }
@@ -168,53 +187,52 @@ const styles = StyleSheet.create({
   modalOverlay: {
     flex: 1,
     backgroundColor: 'rgba(0, 0, 0, 0.5)',
-    justifyContent: 'center',
+    justifyContent: 'flex-end',
+  },
+  modalContent: {
+    backgroundColor: '#FFFFFF',
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    maxHeight: SCREEN_HEIGHT * 0.75, // 75% of screen height, not full screen
+    paddingBottom: Platform.OS === 'ios' ? 20 : 10,
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: -2,
+    },
+    shadowOpacity: 0.25,
+    shadowRadius: 3.84,
+    elevation: 5,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
     alignItems: 'center',
-    padding: 20,
-  },
-  modalCard: {
-    width: '100%',
-    maxWidth: 400,
-    maxHeight: '80%',
-  },
-  modalTitle: {
-    textAlign: 'center',
-    marginBottom: 20,
-    fontWeight: '600',
-  },
-  dateList: {
-    maxHeight: 300,
-    marginBottom: 20,
-  },
-  dateOption: {
-    padding: 16,
+    paddingHorizontal: 20,
+    paddingVertical: 16,
     borderBottomWidth: 1,
     borderBottomColor: '#E5E7EB',
-    borderRadius: 8,
-    marginBottom: 4,
   },
-  selectedDateOption: {
-    backgroundColor: '#EFF6FF',
-    borderColor: '#3B82F6',
-    borderWidth: 1,
-  },
-  dateOptionText: {
-    fontSize: 16,
-    color: '#374151',
-  },
-  selectedDateOptionText: {
-    color: '#3B82F6',
+  modalTitle: {
     fontWeight: '600',
+    color: '#1F2937',
+  },
+  calendarWrapper: {
+    paddingHorizontal: 8,
+    paddingVertical: 8,
+    minHeight: 350,
   },
   modalActions: {
     flexDirection: 'row',
     justifyContent: 'space-between',
+    paddingHorizontal: 20,
+    paddingTop: 16,
+    paddingBottom: 16,
     gap: 12,
+    borderTopWidth: 1,
+    borderTopColor: '#E5E7EB',
   },
-  cancelButton: {
-    flex: 1,
-  },
-  confirmButton: {
+  actionButton: {
     flex: 1,
   },
 });

@@ -93,6 +93,11 @@ function MainTabNavigator(): React.JSX.Element {
   const userRole = getUserRole(state.user);
   const tabs = getTabsForRole(userRole);
 
+  // Determine which Dashboard component to use based on role
+  const DashboardComponent = userRole === 'TEAM_LEAD' 
+    ? TeamLeaderDashboardScreen 
+    : DashboardScreen;
+
   return (
     <Tab.Navigator
       screenOptions={({ route }) => ({
@@ -134,16 +139,24 @@ function MainTabNavigator(): React.JSX.Element {
         headerShown: false, // This hides the header titles
       })}
     >
-      {tabs.map((tab) => (
-        <Tab.Screen
-          key={tab.name}
-          name={tab.name}
-          component={getScreenComponent(tab.name)}
-          options={{
-            title: tab.label,
-          }}
-        />
-      ))}
+      {tabs.map((tab) => {
+        // Use TeamLeaderDashboardScreen for team leads on Dashboard tab
+        let Component = getScreenComponent(tab.name);
+        if (tab.name === 'Dashboard' && userRole === 'TEAM_LEAD') {
+          Component = DashboardComponent;
+        }
+        
+        return (
+          <Tab.Screen
+            key={tab.name}
+            name={tab.name}
+            component={Component}
+            options={{
+              title: tab.label,
+            }}
+          />
+        );
+      })}
     </Tab.Navigator>
   );
 }

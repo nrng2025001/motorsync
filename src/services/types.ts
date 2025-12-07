@@ -19,21 +19,13 @@ export interface PaginatedResponse<T> {
 
 // ========== ENQUIRY TYPES ==========
 
+// Phase 2: Backend now restricts to 5 source values only
 export enum EnquirySource {
-  WALK_IN = 'WALK_IN',
-  PHONE_CALL = 'PHONE_CALL',
-  WEBSITE = 'WEBSITE',
-  DIGITAL = 'DIGITAL',
-  SOCIAL_MEDIA = 'SOCIAL_MEDIA',
-  REFERRAL = 'REFERRAL',
-  ADVERTISEMENT = 'ADVERTISEMENT',
-  EMAIL = 'EMAIL',
-  SHOWROOM_VISIT = 'SHOWROOM_VISIT',
-  EVENT = 'EVENT',
-  BTL_ACTIVITY = 'BTL_ACTIVITY',
-  WHATSAPP = 'WHATSAPP',
-  OUTBOUND_CALL = 'OUTBOUND_CALL',
-  OTHER = 'OTHER'
+  SHOWROOM_VISIT = 'SHOWROOM_VISIT',  // Maps to: 'Showroom Walk-in'
+  DIGITAL = 'DIGITAL',                  // Maps to: 'Digital'
+  BTL_ACTIVITY = 'BTL_ACTIVITY',        // Maps to: 'BTL Activity'
+  PHONE_CALL = 'PHONE_CALL',            // Maps to: 'Tele-in'
+  REFERRAL = 'REFERRAL'                 // Maps to: 'Referral'
 }
 
 export enum EnquiryCategory {
@@ -57,10 +49,11 @@ export interface CreateEnquiryRequest {
   model: string;
   variant: string;
   color?: string;
+  fuelType?: string; // Phase 2: NEW FIELD
   source?: EnquirySource;
   location?: string;
-  expectedBookingDate: string;
-  nextFollowUpDate?: string;
+  expectedBookingDate: string; // Phase 2: MANDATORY
+  nextFollowUpDate: string;    // Phase 2: MANDATORY (was optional)
   caRemarks?: string;
   category?: EnquiryCategory;
   assignedToUserId?: string;
@@ -75,6 +68,7 @@ export interface UpdateEnquiryRequest {
   model?: string;
   variant?: string;
   color?: string;
+  fuelType?: string; // Phase 2: NEW FIELD
   source?: EnquirySource;
   location?: string;
   expectedBookingDate?: string;
@@ -83,6 +77,7 @@ export interface UpdateEnquiryRequest {
   category?: EnquiryCategory;
   caRemarks?: string;
   assignedToUserId?: string;
+  lostReason?: string; // Phase 2: Required when marking as LOST
 }
 
 export interface EnquiryFilters {
@@ -106,6 +101,7 @@ export interface Enquiry {
   model: string;
   variant?: string;
   color?: string;
+  fuelType?: string; // Phase 2: NEW FIELD
   source?: EnquirySource;
   status: EnquiryStatus;
   category: EnquiryCategory;
@@ -118,6 +114,8 @@ export interface Enquiry {
   assignedToUserId?: string;
   createdAt: string;
   updatedAt: string;
+  isImportedFromQuotation?: boolean; // Phase 2: NEW FIELD - indicates read-only vehicle fields
+  quotationImportedAt?: string;       // Phase 2: NEW FIELD
   createdBy?: {
     firebaseUid: string;
     name: string;
@@ -164,6 +162,7 @@ export interface RemarkHistoryEntry {
       name: string;
     };
   };
+  isEditable?: boolean; // Phase 2: NEW FIELD - indicates if remark can be edited
   cancelled?: boolean;
   cancellationReason?: string;
   cancelledAt?: string;
@@ -267,11 +266,14 @@ export interface Booking {
   stockAvailability?: StockAvailability;
   rtoDate?: string;
   vahanDate?: string; // Phase 2: Vahan date capture
+  // Phase 2: Legacy role-based remarks (kept for backward compatibility)
   advisorRemarks?: string;
   teamLeadRemarks?: string;
   salesManagerRemarks?: string;
   generalManagerRemarks?: string;
   adminRemarks?: string;
+  // Phase 2: NEW - Timeline-based remarks (same as enquiry)
+  remarkHistory?: RemarkHistoryEntry[];
   dealerCode?: string;
   zone?: string;
   region?: string;

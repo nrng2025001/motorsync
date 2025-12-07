@@ -94,22 +94,24 @@ export async function updateEnquiry(id: string, data: UpdateEnquiryRequest): Pro
 
 /**
  * Convert enquiry to booking
+ * Phase 2: Conversion should mark enquiry as BOOKED category (not CONVERTED status)
+ * The backend doesn't accept CONVERTED as a status value
  */
 export async function convertEnquiryToBooking(enquiryId: string): Promise<AutoBookingResponse> {
   console.log('🔄 [EnquiryService.convertEnquiryToBooking] Converting enquiry to booking:', enquiryId);
   
-  // This would typically call a specific endpoint for conversion
-  // For now, we'll update the enquiry status to CONVERTED
-  const response = await enquiryAPI.updateStatus(enquiryId, EnquiryStatus.CONVERTED);
+  // Phase 2: Mark enquiry as BOOKED category instead of changing status
+  // This locks the enquiry and indicates it's been converted to a booking
+  const response = await enquiryAPI.updateCategory(enquiryId, EnquiryCategory.BOOKED, 'Converted to booking');
   
   console.log('✅ [EnquiryService.convertEnquiryToBooking] Conversion completed:', response);
   
-  // Return a mock booking response for now
+  // Return response with enquiry data
   return {
     success: true,
     message: 'Enquiry converted to booking successfully',
     enquiry: response.data || response,
-    booking: null // Would be populated by actual conversion endpoint
+    booking: null // Would be populated by actual conversion endpoint if available
   };
 }
 
